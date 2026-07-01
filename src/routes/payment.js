@@ -42,6 +42,14 @@ module.exports = function createPaymentRouter(svc) {
   //   false (dev) → 503 — لا بوابة دفع حقيقية مُهيَّأة.
   //   true  (prod) → يُنفَّذ المنطق الحالي كـ placeholder حتى ربط gateway فعلي.
   router.post('/wallet/charge', authenticate, async (req, res) => {
+    const { amount, method } = req.body;
+    const MAX_CHARGE = 500;
+    if (!amount || Number(amount) <= 0 || Number(amount) > MAX_CHARGE)
+      return res.status(400).json({
+        success: false,
+        message: `المبلغ يجب أن يكون بين 0.001 و ${MAX_CHARGE} د.ك`,
+      });
+
     if (!PAYMENT_ENABLED) {
       return res.status(503).json({
         success: false,
@@ -52,13 +60,6 @@ module.exports = function createPaymentRouter(svc) {
 
     try {
       const phone = req.user.phone;
-      const { amount, method } = req.body;
-      const MAX_CHARGE = 500;
-      if (!amount || amount <= 0 || amount > MAX_CHARGE)
-        return res
-          .status(400)
-          .json({ success: false, message: `المبلغ يجب أن يكون بين 0.001 و ${MAX_CHARGE} د.ك` });
-
       const user = await userRepo.findByPhone(phone);
       if (!user) return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
 

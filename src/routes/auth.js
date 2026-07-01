@@ -94,7 +94,8 @@ module.exports = function createAuthRouter(svc) {
 
   // ===== التحقق من الجلسة =====
   router.get('/auth/verify', (req, res) => {
-    const token = req.headers['x-session-token'];
+    const token =
+      req.headers['authorization']?.replace('Bearer ', '') || req.headers['x-session-token'];
     const session = getSession(token);
     if (!session) return res.status(401).json({ success: false, message: 'الجلسة منتهية' });
     res.json({ success: true, session });
