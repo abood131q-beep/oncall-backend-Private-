@@ -383,11 +383,20 @@ module.exports = function createTaxiRouter(svc) {
       const trip = await tripRepo.findById(tripId);
       if (!trip) return res.status(404).json({ success: false });
 
-      // Ownership Validation (Task 7.8): فقط راكب الرحلة يستطيع تقييم السائق
+      // Ownership Validation: فقط راكب الرحلة يستطيع تقييم السائق
       if (req.user.phone !== trip.user_phone) {
         return res
           .status(403)
           .json({ success: false, message: 'يمكن للراكب الأصلي فقط تقييم السائق' });
+      }
+
+      // منع التقييم المكرر
+      if (trip.rating !== null && trip.rating !== undefined) {
+        return res.status(409).json({ success: false, message: 'لقد قيّمت هذه الرحلة مسبقاً' });
+      }
+
+      if (trip.status !== 'completed') {
+        return res.status(400).json({ success: false, message: 'يمكن تقييم الرحلات المكتملة فقط' });
       }
 
       await tripRepo.rateByPassenger(tripId, rating, comment);
@@ -435,12 +444,21 @@ module.exports = function createTaxiRouter(svc) {
       const trip = await tripRepo.findById(tripId);
       if (!trip) return res.status(404).json({ success: false });
 
-      // Ownership Validation (Task 7.8): فقط سائق الرحلة يستطيع تقييم الراكب
+      // Ownership Validation: فقط سائق الرحلة يستطيع تقييم الراكب
       const ratingDriver = await driverRepo.findByPhone(req.user.phone);
       if (!ratingDriver || trip.driver_id !== ratingDriver.id) {
         return res
           .status(403)
           .json({ success: false, message: 'يمكن للسائق الأصلي فقط تقييم الراكب' });
+      }
+
+      // منع التقييم المكرر
+      if (trip.driver_rating !== null && trip.driver_rating !== undefined) {
+        return res.status(409).json({ success: false, message: 'لقد قيّمت هذا الراكب مسبقاً' });
+      }
+
+      if (trip.status !== 'completed') {
+        return res.status(400).json({ success: false, message: 'يمكن تقييم الرحلات المكتملة فقط' });
       }
 
       await tripRepo.rateByDriver(tripId, rating, comment);
