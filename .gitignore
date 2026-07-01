@@ -46,3 +46,4 @@ run_phase*.command
 # ─── MCP build output ─────────────────────────────────────────────────────────
 tools/oncall-mcp/dist/
 tools/oncall-mcp/node_modules/
+.claude/
