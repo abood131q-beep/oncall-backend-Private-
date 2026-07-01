@@ -1,0 +1,25 @@
+{
+  "name": "oncall-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for the OnCall backend — exposes users, drivers, scooters, and taxi requests as tools",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "keywords": ["mcp", "oncall", "claude"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "axios": "^1.18.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
