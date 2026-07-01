@@ -1,0 +1,35 @@
+{
+  "name": "oncall-backend",
+  "version": "1.0.0",
+  "description": "OnCall ride-sharing & scooter backend — Kuwait",
+  "main": "server.js",
+  "scripts": {
+    "start":        "node server.js",
+    "dev":          "node --watch server.js",
+    "test":         "bash run_tests.sh",
+    "lint":         "eslint 'src/**/*.js' server.js database.js --max-warnings 0",
+    "lint:fix":     "eslint 'src/**/*.js' server.js database.js --fix",
+    "format":       "prettier --write 'src/**/*.js' server.js database.js",
+    "format:check": "prettier --check 'src/**/*.js' server.js database.js",
+    "ci":           "npm run lint && npm run format:check && npm test"
+  },
+  "keywords": ["oncall", "ride-sharing", "kuwait", "backend"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "prettier": "^3.3.3"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "helmet": "^8.2.0",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^6.0.1"
+  }
+}

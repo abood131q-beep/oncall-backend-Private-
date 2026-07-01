@@ -1,0 +1,48 @@
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Environment (NEVER commit secrets) ───────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── Database files (contain live data) ───────────────────────────────────────
+*.db
+*.db-wal
+*.db-shm
+
+# ─── Runtime artifacts ────────────────────────────────────────────────────────
+backups/
+logs/
+dist/
+
+# ─── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+.fuse_hidden*
+._*
+.Spotlight-V7
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ─── Development artifacts (never ship these) ─────────────────────────────────
+*.bak
+*.bak_*
+*.save
+test_results_*.txt
+*.command
+run_phase*.command
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── SonarQube ────────────────────────────────────────────────────────────────
+.scannerwork/
+
+# ─── MCP build output ─────────────────────────────────────────────────────────
+tools/oncall-mcp/dist/
+tools/oncall-mcp/node_modules/
