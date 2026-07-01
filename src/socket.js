@@ -217,11 +217,21 @@ function setupSocket(io, svc) {
     });
 
     // ─── تسجيل السائق ────────────────────────────────────────────────────────
-    socket.on('driver:register', () => {
+    socket.on('driver:register', async () => {
       const registeredPhone = socket.data.user.phone;
-      socket.driverPhone = registeredPhone; // تأكيد (قد يكون مضبوطاً مسبقاً)
+      socket.driverPhone = registeredPhone;
       if (!socket.rooms.has(`driver:${registeredPhone}`)) socket.join(`driver:${registeredPhone}`);
       socket.join('drivers:online');
+      // مزامنة DB مع الـ socket room — يُعالج حالة reconnect بعد انقطاع
+      try {
+        await dbRun("UPDATE drivers SET status='online' WHERE phone=?", [registeredPhone]);
+        await dbRun(
+          "UPDATE taxis SET status='online' WHERE driver_id=(SELECT id FROM drivers WHERE phone=?)",
+          [registeredPhone]
+        );
+      } catch (e) {
+        logger.error('driver:register DB sync error:', { message: e.message });
+      }
       logger.info(
         `Driver ${String(registeredPhone).slice(0, 3)}*** registered in drivers:online room`
       );
