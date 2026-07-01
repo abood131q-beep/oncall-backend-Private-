@@ -120,7 +120,13 @@ function formatTrip(t) {
 
   return {
     ...rest,
-    route: (() => { try { return JSON.parse(t.route || '[]'); } catch { return []; } })(),
+    route: (() => {
+      try {
+        return JSON.parse(t.route || '[]');
+      } catch {
+        return [];
+      }
+    })(),
     estimatedFare: t.estimated_fare,
     finalFare: t.final_fare,
     pickupLat: t.pickup_lat,

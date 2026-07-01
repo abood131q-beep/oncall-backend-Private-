@@ -108,8 +108,7 @@ module.exports = function createAdminRouter(svc) {
       const trip = await tripRepo.findById(req.params.id);
       if (!trip) return res.status(404).json({ success: false });
       await tripRepo.cancelByAdmin(req.params.id);
-      if (trip.driver_id)
-        await driverRepo.setTaxiStatus(trip.driver_id, 'online');
+      if (trip.driver_id) await driverRepo.setTaxiStatus(trip.driver_id, 'online');
       io.to(`trip:${req.params.id}`).emit('trip:updated', {
         ...formatTrip(trip),
         status: 'cancelled',
@@ -299,10 +298,10 @@ module.exports = function createAdminRouter(svc) {
   router.get('/admin/db/health', authenticateAdmin, async (req, res) => {
     try {
       // Sequential — wal_checkpoint can lock the DB, causing parallel PRAGMAs to fail
-      const integrity     = await dbGet('PRAGMA integrity_check');
-      const pageCount     = await dbGet('PRAGMA page_count');
-      const pageSize      = await dbGet('PRAGMA page_size');
-      const journalMode   = await dbGet('PRAGMA journal_mode');
+      const integrity = await dbGet('PRAGMA integrity_check');
+      const pageCount = await dbGet('PRAGMA page_count');
+      const pageSize = await dbGet('PRAGMA page_size');
+      const journalMode = await dbGet('PRAGMA journal_mode');
       const walCheckpoint = await dbGet('PRAGMA wal_checkpoint');
       let dbSizeKB = 0;
       try {

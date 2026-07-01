@@ -7,7 +7,13 @@ const express = require('express');
 // ─── Config & Utils ──────────────────────────────────────────────────────────
 const { ADMIN_PHONES, PORT } = require('./src/config/env');
 const logger = require('./src/utils/logger');
-const { safeJSON, getDistanceKm, sanitizeBody, validateCoords, validatePhone } = require('./src/utils/helpers');
+const {
+  safeJSON,
+  getDistanceKm,
+  sanitizeBody,
+  validateCoords,
+  validatePhone,
+} = require('./src/utils/helpers');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const {
@@ -148,7 +154,11 @@ app.use((err, _req, res, _next) => {
   if (err.status === 400 && err.type === 'entity.parse.failed') {
     return res.status(400).json({ success: false, message: 'صيغة JSON غير صحيحة' });
   }
-  logger.error('Unhandled Express error:', { message: err.message, stack: err.stack, status: err.status });
+  logger.error('Unhandled Express error:', {
+    message: err.message,
+    stack: err.stack,
+    status: err.status,
+  });
   res.status(err.status || 500).json({ success: false, message: 'خطأ في السيرفر' });
 });
 

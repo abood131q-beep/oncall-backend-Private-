@@ -21,7 +21,10 @@ function checkRateLimit(socket, event, maxPerMin) {
   if (!socket._rl) socket._rl = {};
   const now = Date.now();
   const r = socket._rl[event] || { count: 0, reset: now + 60000 };
-  if (now > r.reset) { r.count = 0; r.reset = now + 60000; }
+  if (now > r.reset) {
+    r.count = 0;
+    r.reset = now + 60000;
+  }
   r.count++;
   socket._rl[event] = r;
   return r.count <= maxPerMin;
@@ -178,7 +181,9 @@ function setupSocket(io, svc) {
             lat,
             lng,
             trip.driver_id,
-          ]).catch((e) => logger.error('driver:location taxi update error:', { message: e.message }));
+          ]).catch((e) =>
+            logger.error('driver:location taxi update error:', { message: e.message })
+          );
           clearCache('taxis');
         }
       } catch (e) {
@@ -217,7 +222,9 @@ function setupSocket(io, svc) {
       socket.driverPhone = registeredPhone; // تأكيد (قد يكون مضبوطاً مسبقاً)
       if (!socket.rooms.has(`driver:${registeredPhone}`)) socket.join(`driver:${registeredPhone}`);
       socket.join('drivers:online');
-      logger.info(`Driver ${String(registeredPhone).slice(0, 3)}*** registered in drivers:online room`);
+      logger.info(
+        `Driver ${String(registeredPhone).slice(0, 3)}*** registered in drivers:online room`
+      );
     });
 
     // ─── تغيير حالة السائق ───────────────────────────────────────────────────

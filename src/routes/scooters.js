@@ -154,7 +154,7 @@ module.exports = function createScootersRouter(svc) {
 
         // Atomic deduct — prevents race condition if end-ride called concurrently
         const deductResult = await walletRepo.deductBalanceSafe(phone, fare);
-        let newBalance = deductResult.balanceAfter ?? 0;
+        const newBalance = deductResult.balanceAfter ?? 0;
         if (deductResult.success) {
           const balanceBefore = newBalance + fare;
           await walletRepo.logTransaction(

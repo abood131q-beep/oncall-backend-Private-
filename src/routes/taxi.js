@@ -30,8 +30,7 @@ module.exports = function createTaxiRouter(svc) {
   } = svc;
 
   // Helper: reset taxi status by driver FK (trip.driver_id = drivers.id, not taxis.id)
-  const resetTaxiOnline = (driverId) =>
-    driverRepo.setTaxiStatus(driverId, 'online');
+  const resetTaxiOnline = (driverId) => driverRepo.setTaxiStatus(driverId, 'online');
 
   // ─── Driver Matcher (DriverMatcherService) ───────────────────────────────
   const { findNearestDriver, sendRequestToDriver } = createDriverMatcher(svc);
@@ -68,7 +67,9 @@ module.exports = function createTaxiRouter(svc) {
       }
       // إصلاح M1: التحقق من صحة الإحداثيات إذا أُرسلت
       if ((pickupLat || pickupLng) && !validateCoords(pickupLat, pickupLng)) {
-        return res.status(400).json({ success: false, message: 'إحداثيات نقطة الانطلاق غير صحيحة' });
+        return res
+          .status(400)
+          .json({ success: false, message: 'إحداثيات نقطة الانطلاق غير صحيحة' });
       }
       if ((destLat || destLng) && !validateCoords(destLat, destLng)) {
         return res.status(400).json({ success: false, message: 'إحداثيات الوجهة غير صحيحة' });
@@ -479,7 +480,11 @@ module.exports = function createTaxiRouter(svc) {
 
       await tripRepo.updateLocation(tripId, lat, lng, route);
       if (trip.driver_id)
-        await dbRun('UPDATE taxis SET lat = ?, lng = ? WHERE driver_id = ?', [lat, lng, trip.driver_id]);
+        await dbRun('UPDATE taxis SET lat = ?, lng = ? WHERE driver_id = ?', [
+          lat,
+          lng,
+          trip.driver_id,
+        ]);
 
       let liveStats = null;
       if (trip.status === 'in_progress' && route.length > 1) {

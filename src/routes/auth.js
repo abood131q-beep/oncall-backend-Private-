@@ -24,7 +24,8 @@ module.exports = function createAuthRouter(svc) {
       const { phone, name } = req.body;
       if (!phone) return res.status(400).json({ success: false, message: 'رقم الهاتف مطلوب' });
       // إصلاح M2: التحقق من صيغة رقم الهاتف
-      if (!validatePhone(phone)) return res.status(400).json({ success: false, message: 'رقم الهاتف غير صحيح' });
+      if (!validatePhone(phone))
+        return res.status(400).json({ success: false, message: 'رقم الهاتف غير صحيح' });
       let user = await userRepo.findByPhone(phone);
       if (!user) {
         user = await userRepo.create(phone, name);
@@ -52,7 +53,8 @@ module.exports = function createAuthRouter(svc) {
       const { phone } = req.body;
       if (!phone) return res.status(400).json({ success: false, message: 'رقم الهاتف مطلوب' });
       // إصلاح M2: التحقق من صيغة رقم الهاتف
-      if (!validatePhone(phone)) return res.status(400).json({ success: false, message: 'رقم الهاتف غير صحيح' });
+      if (!validatePhone(phone))
+        return res.status(400).json({ success: false, message: 'رقم الهاتف غير صحيح' });
       let driver = await driverRepo.findByPhone(phone);
       if (!driver) {
         driver = await driverRepo.create(phone);
