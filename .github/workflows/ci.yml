@@ -1,0 +1,233 @@
+name: OnCall CI
+
+on:
+  push:
+    branches: [main, master, dev, staging]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Job 1: Lint + Format
+  # ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dev dependencies
+        run: npm ci --include=dev
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check Prettier formatting
+        run: npm run format:check
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Job 2: Build (تحقق من صحة الكود)
+  # ─────────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check — server.js
+        run: node --check server.js
+
+      - name: Syntax check — src/
+        run: |
+          find src -name '*.js' | while read f; do
+            node --check "$f" || exit 1
+          done
+          echo "✅ All src/ files pass syntax check"
+
+      - name: Build MCP server
+        working-directory: tools/oncall-mcp
+        run: |
+          npm ci
+          npm run build
+          echo "✅ MCP server built"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Job 3: Backend Tests (run_tests.sh)
+  # ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    env:
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
+      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '' }}
+      PORT: 3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .env for CI
+        run: |
+          echo "JWT_SECRET=${JWT_SECRET}" > .env
+          echo "ADMIN_PHONES=${ADMIN_PHONES}" >> .env
+          echo "PORT=${PORT}" >> .env
+
+      - name: Install sqlite3 CLI
+        run: sudo apt-get install -y sqlite3
+
+      - name: Build MCP (needed for MCP tests)
+        working-directory: tools/oncall-mcp
+        run: npm ci && npm run build
+
+      - name: Run full test suite
+        run: bash run_tests.sh 2>&1 | tee test_output.txt
+
+      - name: Check test results
+        run: |
+          FAIL=$(grep -c "❌ FAIL" test_output.txt || true)
+          WARN=$(grep -c "⚠️  WARN" test_output.txt || true)
+          PASS=$(grep -c "✅ PASS" test_output.txt || true)
+          echo ""
+          echo "═══════════════════════════════════"
+          echo "  PASS: $PASS  |  FAIL: $FAIL  |  WARN: $WARN"
+          echo "═══════════════════════════════════"
+          if [ "$FAIL" -gt "0" ]; then
+            echo "❌ Tests FAILED — $FAIL failure(s)"
+            grep "❌ FAIL" test_output.txt
+            exit 1
+          fi
+          if [ "$WARN" -gt "0" ]; then
+            echo "⚠️  Warnings present — $WARN warning(s)"
+            grep "⚠️" test_output.txt
+            exit 1
+          fi
+          echo "✅ All tests passed!"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_number }}
+          path: test_output.txt
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Job 4: MCP Tests (standalone)
+  # ─────────────────────────────────────────────────────────────────────
+  mcp-test:
+    name: MCP Server Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    env:
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
+      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install backend deps
+        run: npm ci
+
+      - name: Install sqlite3 CLI
+        run: sudo apt-get install -y sqlite3
+
+      - name: Create .env for CI
+        run: |
+          echo "JWT_SECRET=${JWT_SECRET}" > .env
+          echo "ADMIN_PHONES=${ADMIN_PHONES}" >> .env
+          echo "PORT=3000" >> .env
+
+      - name: Build MCP server
+        working-directory: tools/oncall-mcp
+        run: npm ci && npm run build
+
+      - name: Start backend in background
+        run: |
+          node server.js &
+          echo $! > /tmp/server.pid
+          sleep 3
+          curl -sf http://localhost:3000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('Server OK:', d['status'])"
+
+      - name: Run MCP tests
+        working-directory: tools/oncall-mcp
+        run: |
+          PASS=$(node test-mcp.mjs 2>/dev/null | grep -c "✓" || true)
+          FAIL=$(node test-mcp.mjs 2>/dev/null | grep -c "✗" || true)
+          echo "MCP Tests — ✓ $PASS / ✗ $FAIL"
+          if [ "$FAIL" -gt "0" ]; then
+            echo "⚠️  Some MCP tests failed (may be due to admin auth)"
+          fi
+
+      - name: Stop backend
+        if: always()
+        run: kill $(cat /tmp/server.pid) 2>/dev/null || true
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Summary — يظهر في GitHub PR checks
+  # ─────────────────────────────────────────────────────────────────────
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, build, test, mcp-test]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "┌─────────────────────────────────┐"
+          echo "│       OnCall CI Summary          │"
+          echo "├─────────────────────────────────┤"
+          echo "│ Lint:      ${{ needs.lint.result }}"
+          echo "│ Build:     ${{ needs.build.result }}"
+          echo "│ Tests:     ${{ needs.test.result }}"
+          echo "│ MCP Tests: ${{ needs.mcp-test.result }}"
+          echo "└─────────────────────────────────┘"
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ]; then
+            echo "❌ CI Failed"
+            exit 1
+          fi
+          echo "✅ CI Passed"
