@@ -16,6 +16,7 @@ module.exports = function createScootersRouter(svc) {
     userRepo,
     walletRepo,
     notifRepo,
+    validateCoords,
     dbRun, // لعمليات taxis في resetAll — سيُنقل لاحقاً
   } = svc;
 
@@ -104,9 +105,13 @@ module.exports = function createScootersRouter(svc) {
     }
   });
 
-  // استئجار سكوتر (القديم - للتوافق)
-  router.post('/scooter/rent', async (req, res) => {
-    return res.redirect(307, '/scooter/unlock');
+  // إصلاح M11: /scooter/rent legacy — 410 Gone (redirect 307 بدون auth خطر)
+  router.post('/scooter/rent', (req, res) => {
+    return res.status(410).json({
+      success: false,
+      message: 'هذه النقطة معطّلة. استخدم POST /scooter/unlock',
+      code: 'ENDPOINT_DEPRECATED',
+    });
   });
 
   // ===== إنهاء رحلة السكوتر =====
@@ -230,9 +235,15 @@ module.exports = function createScootersRouter(svc) {
   });
 
   // ===== إدارة السكوترات (Admin) =====
+  // إصلاح M1: validateCoords على lat/lng قبل إدخالها في DB
   router.post('/admin/scooters', authenticateAdmin, async (req, res) => {
     try {
       const { name, scooter_code, lat, lng, battery } = req.body;
+      if (lat != null || lng != null) {
+        if (!validateCoords(lat, lng)) {
+          return res.status(400).json({ success: false, message: 'إحداثيات غير صالحة' });
+        }
+      }
       const result = await scooterRepo.create(name, scooter_code, lat, lng, battery);
       res.json({ success: true, id: result.lastID });
     } catch (err) {
