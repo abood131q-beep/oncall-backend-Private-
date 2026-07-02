@@ -321,6 +321,10 @@ module.exports = function createTaxiRouter(svc) {
             logger.success(
               `Payment #${tripId}: ${paymentMethod} = ${finalFare} KD - ${payResult.success ? 'OK' : 'FAILED'}`
             );
+            await dbRun(
+              "UPDATE trips SET payment_status = ? WHERE id = ?",
+              [payResult.success ? 'completed' : 'failed', tripId]
+            );
             await notifRepo.sendForTrip(
               trip.user_phone,
               '🏁 وصلت بسلامة',
