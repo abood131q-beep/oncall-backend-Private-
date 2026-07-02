@@ -34,6 +34,12 @@ module.exports = function createTaxiRouter(svc) {
   // Helper: reset taxi status by driver FK (trip.driver_id = drivers.id, not taxis.id)
   const resetTaxiOnline = (driverId) => driverRepo.setTaxiStatus(driverId, 'online');
 
+  // Authorization: هل يحق للمستخدم الوصول لهذه الرحلة؟
+  const canAccessTrip = (user, trip) =>
+    user.role === 'admin'
+    || user.phone === trip.user_phone
+    || (user.driverId != null && user.driverId === trip.driver_id);
+
   // ─── Driver Matcher (DriverMatcherService) ───────────────────────────────
   const { findNearestDriver, sendRequestToDriver } = createDriverMatcher(svc);
 
@@ -559,6 +565,8 @@ module.exports = function createTaxiRouter(svc) {
     try {
       const trip = await tripRepo.findById(Number(req.params.id));
       if (!trip) return res.status(404).json({ success: false });
+      if (!canAccessTrip(req.user, trip))
+        return res.status(403).json({ success: false, message: 'غير مصرح' });
 
       const route = safeJSON(trip.route, []);
       let distanceKm = 0;
@@ -602,6 +610,8 @@ module.exports = function createTaxiRouter(svc) {
     try {
       const trip = await tripRepo.findById(Number(req.params.id));
       if (!trip) return res.status(404).json({ success: false });
+      if (!canAccessTrip(req.user, trip))
+        return res.status(403).json({ success: false, message: 'غير مصرح' });
       res.json({ success: true, trip: formatTrip(trip) });
     } catch (err) {
       res.status(500).json({ success: false });

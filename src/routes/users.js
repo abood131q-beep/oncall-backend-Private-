@@ -23,6 +23,8 @@ module.exports = function createUsersRouter(svc) {
   router.get('/balance/:phone', authenticate, async (req, res) => {
     try {
       const phone = req.user.phone;
+      if (req.params.phone !== phone)
+        return res.status(403).json({ success: false, message: 'غير مصرح' });
       const row = await walletRepo.getBalance(phone);
       if (!row) return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
       res.json({ success: true, balance: row.balance });

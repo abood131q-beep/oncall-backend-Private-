@@ -96,6 +96,8 @@ module.exports = function createPaymentRouter(svc) {
   router.get('/wallet/transactions/:phone', authenticate, async (req, res) => {
     try {
       const phone = req.user.phone;
+      if (req.params.phone !== phone)
+        return res.status(403).json({ success: false, message: 'غير مصرح' });
       const transactions = await walletRepo.getTransactions(phone, 50);
       const row = await walletRepo.getBalance(phone);
       res.json({ success: true, balance: row?.balance || 0, transactions });
@@ -108,6 +110,8 @@ module.exports = function createPaymentRouter(svc) {
   router.get('/wallet/balance/:phone', authenticate, async (req, res) => {
     try {
       const phone = req.user.phone;
+      if (req.params.phone !== phone)
+        return res.status(403).json({ success: false, message: 'غير مصرح' });
       const row = await walletRepo.getBalance(phone);
       if (!row) return res.status(404).json({ success: false });
       res.json({ success: true, balance: row.balance });
