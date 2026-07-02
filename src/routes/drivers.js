@@ -4,12 +4,12 @@ const express = require('express');
 
 module.exports = function createDriversRouter(svc) {
   const router = express.Router();
-  const { authenticate, formatTrip, logger, driverRepo, tripRepo } = svc;
+  const { authenticate, authenticateDriver, formatTrip, logger, driverRepo, tripRepo } = svc;
 
   // ===== حالة السائق =====
   // الإصلاح: phone يُقرأ من JWT (req.user.phone) بدلاً من req.body.phone
   // المسار والاستجابة لم يتغيرا — Backward Compatible
-  router.post('/driver/status', authenticate, async (req, res) => {
+  router.post('/driver/status', authenticateDriver, async (req, res) => {
     try {
       const { isOnline } = req.body;
       const phone = req.user.phone; // Single Source of Truth: JWT
@@ -26,7 +26,7 @@ module.exports = function createDriversRouter(svc) {
   // ===== بيانات السائق =====
   // الإصلاح: phone يُقرأ من JWT بدلاً من req.params.phone
   // المسار /driver/info/:phone محفوظ للتوافق مع Flutter — :phone يُتجاهل داخل الـ handler
-  router.get('/driver/info/:phone', authenticate, async (req, res) => {
+  router.get('/driver/info/:phone', authenticateDriver, async (req, res) => {
     try {
       const phone = req.user.phone; // Single Source of Truth: JWT
       const driver = await driverRepo.findByPhone(phone);
@@ -40,7 +40,7 @@ module.exports = function createDriversRouter(svc) {
   // ===== تحديث بيانات السائق =====
   // الإصلاح: phone يُقرأ من JWT بدلاً من req.body.phone
   // المسار والاستجابة لم يتغيرا — Backward Compatible
-  router.post('/driver/update', authenticate, async (req, res) => {
+  router.post('/driver/update', authenticateDriver, async (req, res) => {
     try {
       const phone = req.user.phone; // Single Source of Truth: JWT
       const { name, car_name, plate } = req.body;
@@ -54,7 +54,7 @@ module.exports = function createDriversRouter(svc) {
   // ===== رحلات السائق =====
   // الإصلاح: phone يُقرأ من JWT بدلاً من req.params.phone
   // المسار /driver/trips/:phone محفوظ للتوافق مع Flutter — :phone يُتجاهل داخل الـ handler
-  router.get('/driver/trips/:phone', authenticate, async (req, res) => {
+  router.get('/driver/trips/:phone', authenticateDriver, async (req, res) => {
     try {
       const phone = req.user.phone; // Single Source of Truth: JWT
       const driver = await driverRepo.findByPhone(phone);
@@ -69,7 +69,7 @@ module.exports = function createDriversRouter(svc) {
   // ===== إحصائيات السائق =====
   // الإصلاح: phone يُقرأ من JWT بدلاً من req.params.phone
   // المسار /driver/stats/:phone محفوظ للتوافق مع Flutter — :phone يُتجاهل داخل الـ handler
-  router.get('/driver/stats/:phone', authenticate, async (req, res) => {
+  router.get('/driver/stats/:phone', authenticateDriver, async (req, res) => {
     try {
       const phone = req.user.phone; // Single Source of Truth: JWT
       const driver = await driverRepo.findByPhone(phone);
@@ -134,7 +134,7 @@ module.exports = function createDriversRouter(svc) {
   // ===== تقييمات السائق =====
   // الإصلاح: phone يُقرأ من JWT بدلاً من req.params.phone
   // المسار /driver/reviews/:phone محفوظ للتوافق مع Flutter — :phone يُتجاهل داخل الـ handler
-  router.get('/driver/reviews/:phone', authenticate, async (req, res) => {
+  router.get('/driver/reviews/:phone', authenticateDriver, async (req, res) => {
     try {
       const phone = req.user.phone; // Single Source of Truth: JWT
       const driver = await driverRepo.findByPhone(phone);

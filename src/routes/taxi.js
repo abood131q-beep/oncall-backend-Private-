@@ -12,6 +12,8 @@ module.exports = function createTaxiRouter(svc) {
     dbAll,
     logger,
     authenticate,
+    authenticateDriver,
+    authenticatePassenger,
     authenticateAdmin,
     io,
     tripTimers,
@@ -58,7 +60,7 @@ module.exports = function createTaxiRouter(svc) {
 
   // ===== طلب تاكسي =====
   // الإصلاح H1: phone يُقرأ من JWT بدلاً من req.body.phone
-  router.post('/taxi/request', authenticate, async (req, res) => {
+  router.post('/taxi/request', authenticatePassenger, async (req, res) => {
     try {
       const { pickup, destination, pickupLat, pickupLng, destLat, destLng } = req.body;
       const phone = req.user.phone; // Single Source of Truth: JWT — نتجاهل أي phone من العميل
@@ -121,7 +123,7 @@ module.exports = function createTaxiRouter(svc) {
 
   // ===== رفض الرحلة =====
   // الإصلاح M1: driver_phone يُقرأ من JWT بدلاً من req.body.driver_phone
-  router.post('/taxi/trips/:id/reject', authenticate, async (req, res) => {
+  router.post('/taxi/trips/:id/reject', authenticateDriver, async (req, res) => {
     try {
       const tripId = Number(req.params.id);
       const driver_phone = req.user.phone; // Single Source of Truth: JWT — نتجاهل driver_phone من العميل
@@ -164,8 +166,8 @@ module.exports = function createTaxiRouter(svc) {
 
   // ===== جميع الرحلات =====
   // إصلاح TD-001: driver_phone من query params محذوف — IDOR يتيح لأي مستخدم رؤية رحلات أي سائق.
-  // الآن: JWT يُحدِّد الهوية — إذا كان المستخدم سائقاً يُرجَع له رحلاته، وإلا جميع الرحلات.
-  router.get('/taxi/trips', authenticate, async (req, res) => {
+  // الآن: JWT يُحدِّد الهوية — فقط السائق يصل لهذا الـ endpoint.
+  router.get('/taxi/trips', authenticateDriver, async (req, res) => {
     try {
       const driver = await driverRepo.findByPhone(req.user.phone); // Single Source of Truth: JWT
       let trips;
@@ -180,7 +182,7 @@ module.exports = function createTaxiRouter(svc) {
     }
   });
 
-  router.get('/taxi/requests', authenticate, async (req, res) => {
+  router.get('/taxi/requests', authenticateDriver, async (req, res) => {
     try {
       const trips = await tripRepo.findWaiting(100);
       res.json(trips.map(formatTrip));
@@ -191,7 +193,7 @@ module.exports = function createTaxiRouter(svc) {
 
   // ===== رحلات الراكب =====
   // ملاحظة أمنية: req.user.phone من JWT — لا نثق بـ params.phone لمنع IDOR
-  router.get('/taxi/trips/passenger/:phone', authenticate, async (req, res) => {
+  router.get('/taxi/trips/passenger/:phone', authenticatePassenger, async (req, res) => {
     try {
       const phone = req.user.phone;
       const trips = await tripRepo.findByPassenger(phone);
@@ -218,6 +220,12 @@ module.exports = function createTaxiRouter(svc) {
       ];
       if (!validStatuses.includes(status))
         return res.status(400).json({ success: false, message: 'الحالة غير صحيحة' });
+
+      // Authorization: الحالات التي تخص السائق فقط
+      const DRIVER_ONLY_STATUSES = ['accepted', 'arrived', 'in_progress', 'completed'];
+      if (DRIVER_ONLY_STATUSES.includes(status) && req.user.type !== 'driver') {
+        return res.status(403).json({ success: false, message: 'هذا الإجراء مخصص للسائقين فقط' });
+      }
 
       const trip = await tripRepo.findById(tripId);
       if (!trip) return res.status(404).json({ success: false, message: 'الرحلة غير موجودة' });
@@ -373,7 +381,7 @@ module.exports = function createTaxiRouter(svc) {
   });
 
   // ===== تقييم الراكب للسائق =====
-  router.post('/taxi/trips/:id/rate', authenticate, async (req, res) => {
+  router.post('/taxi/trips/:id/rate', authenticatePassenger, async (req, res) => {
     try {
       const tripId = Number(req.params.id);
       const { rating, comment } = req.body;
@@ -435,7 +443,7 @@ module.exports = function createTaxiRouter(svc) {
   });
 
   // ===== تقييم السائق للراكب =====
-  router.post('/taxi/trips/:id/rate-passenger', authenticate, async (req, res) => {
+  router.post('/taxi/trips/:id/rate-passenger', authenticateDriver, async (req, res) => {
     try {
       const tripId = Number(req.params.id);
       const { rating, comment } = req.body;
@@ -479,7 +487,7 @@ module.exports = function createTaxiRouter(svc) {
   });
 
   // ===== تحديث موقع السائق (HTTP fallback) =====
-  router.post('/taxi/update-location', authenticate, async (req, res) => {
+  router.post('/taxi/update-location', authenticateDriver, async (req, res) => {
     try {
       const { tripId, lat, lng } = req.body;
       const trip = await tripRepo.findById(Number(tripId));

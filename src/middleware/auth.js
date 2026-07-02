@@ -90,6 +90,36 @@ function authenticate(req, res, next) {
   next();
 }
 
+/** Require a valid driver JWT — rejects passengers and unauthenticated requests */
+function authenticateDriver(req, res, next) {
+  const token =
+    req.headers['authorization']?.replace('Bearer ', '') || req.headers['x-session-token'];
+  const payload = verifyJWT(token);
+  if (!payload) {
+    return res.status(401).json({ success: false, message: 'غير مصرح - سجّل دخولك أولاً' });
+  }
+  if (payload.type !== 'driver') {
+    return res.status(403).json({ success: false, message: 'هذا الإجراء مخصص للسائقين فقط' });
+  }
+  req.user = payload;
+  next();
+}
+
+/** Require a valid passenger JWT — rejects drivers and unauthenticated requests */
+function authenticatePassenger(req, res, next) {
+  const token =
+    req.headers['authorization']?.replace('Bearer ', '') || req.headers['x-session-token'];
+  const payload = verifyJWT(token);
+  if (!payload) {
+    return res.status(401).json({ success: false, message: 'غير مصرح - سجّل دخولك أولاً' });
+  }
+  if (payload.type !== 'passenger') {
+    return res.status(403).json({ success: false, message: 'هذا الإجراء مخصص للركاب فقط' });
+  }
+  req.user = payload;
+  next();
+}
+
 /** Require admin role or phone listed in ADMIN_PHONES */
 function authenticateAdmin(req, res, next) {
   const token =
@@ -115,6 +145,8 @@ module.exports = {
   generateJWT,
   verifyJWT,
   authenticate,
+  authenticateDriver,
+  authenticatePassenger,
   authenticateAdmin,
   createSession,
   getSession,

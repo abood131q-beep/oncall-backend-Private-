@@ -79,6 +79,7 @@ function setupSocket(io, svc) {
 
     // ─── الراكب ينضم لغرفة رحلته ────────────────────────────────────────────
     socket.on('passenger:join', async ({ tripId }) => {
+      if (socket.data.user.type !== 'passenger') return; // drivers cannot join as passenger
       const userPhone = socket.data.user.phone;
       const tripRoom = `trip:${tripId}`;
       const passengerRoom = `passenger:${userPhone}`;
@@ -99,6 +100,7 @@ function setupSocket(io, svc) {
 
     // ─── السائق ينضم لغرفة رحلته ─────────────────────────────────────────────
     socket.on('driver:join', async ({ tripId }) => {
+      if (socket.data.user.type !== 'driver') return; // passengers cannot join as driver
       const driverPhone = socket.data.user.phone;
       const tripRoom = `trip:${tripId}`;
       if (!socket.rooms.has(tripRoom)) socket.join(tripRoom);
@@ -116,6 +118,7 @@ function setupSocket(io, svc) {
     // إصلاح H4: Rate limit 120 حدث/دقيقة (2/ثانية كحد أقصى)
     // إصلاح M6: التحقق من أن المرسِل هو سائق الرحلة
     socket.on('driver:location', async ({ tripId, lat, lng }) => {
+      if (socket.data.user.type !== 'driver') return; // passengers cannot emit driver:location
       // Rate limiting
       if (!checkRateLimit(socket, 'driver:location', 120)) return;
 
@@ -218,6 +221,7 @@ function setupSocket(io, svc) {
 
     // ─── تسجيل السائق ────────────────────────────────────────────────────────
     socket.on('driver:register', async () => {
+      if (socket.data.user.type !== 'driver') return; // passengers cannot register as driver
       const registeredPhone = socket.data.user.phone;
       socket.driverPhone = registeredPhone;
       if (!socket.rooms.has(`driver:${registeredPhone}`)) socket.join(`driver:${registeredPhone}`);
@@ -239,6 +243,7 @@ function setupSocket(io, svc) {
 
     // ─── تغيير حالة السائق ───────────────────────────────────────────────────
     socket.on('driver:status', (data) => {
+      if (socket.data.user.type !== 'driver') return; // passengers cannot change driver status
       if (data?.isOnline !== undefined) {
         const statusPhone = socket.data.user.phone;
         if (data.isOnline) {
