@@ -7,8 +7,9 @@
 
 /** Parse JSON safely; return fallback on error */
 function safeJSON(str, fallback = []) {
+  if (!str) return fallback;
   try {
-    return JSON.parse(str || JSON.stringify(fallback));
+    return JSON.parse(str);
   } catch {
     return fallback;
   }

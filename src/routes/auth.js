@@ -16,6 +16,7 @@ module.exports = function createAuthRouter(svc) {
     phoneLoginLimit,
     userRepo,
     driverRepo,
+    dbRun,
   } = svc;
 
   // ===== تسجيل دخول الراكب =====
@@ -40,6 +41,7 @@ module.exports = function createAuthRouter(svc) {
         name: user.name,
         role: isAdmin ? 'admin' : 'passenger',
       });
+      dbRun('INSERT INTO login_logs (phone, type, ip) VALUES (?, ?, ?)', [phone, 'passenger', req.ip]).catch(() => {});
       logger.success(`Passenger login: ${phone.slice(0, 3)}***`);
       res.json({ success: true, user, token: jwtToken });
     } catch (err) {
@@ -73,6 +75,7 @@ module.exports = function createAuthRouter(svc) {
         role: 'driver',
         driverId: driver.id,
       });
+      dbRun('INSERT INTO login_logs (phone, type, ip) VALUES (?, ?, ?)', [phone, 'driver', req.ip]).catch(() => {});
       logger.success(`Driver login: ${phone.slice(0, 3)}***`);
       res.json({ success: true, driver, token: jwtToken });
     } catch (err) {
