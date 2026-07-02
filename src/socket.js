@@ -140,6 +140,8 @@ function setupSocket(io, svc) {
 
         if (trip.status === 'in_progress') {
           route.push({ lat, lng, time: Date.now() });
+          // Cap route at 500 points to prevent DB bloat on long trips (~1 point/5s → ~40min)
+          if (route.length > 500) route.splice(0, route.length - 500);
           if (route.length > 1) {
             let totalDist = 0;
             for (let i = 1; i < route.length; i++) {
@@ -164,11 +166,11 @@ function setupSocket(io, svc) {
         }
 
         io.to(`trip:${tripId}`).emit('driver:moved', {
-          t: tripId,
-          la: Math.round(lat * 100000) / 100000,
-          ln: Math.round(lng * 100000) / 100000,
-          s: trip.status,
-          st: liveStats,
+          tripId,
+          lat: Math.round(lat * 100000) / 100000,
+          lng: Math.round(lng * 100000) / 100000,
+          status: trip.status,
+          liveStats,
         });
 
         // Fire-and-forget DB write — attach error handler (L7 fix)
@@ -242,8 +244,8 @@ function setupSocket(io, svc) {
     });
 
     // ─── تغيير حالة السائق ───────────────────────────────────────────────────
-    socket.on('driver:status', (data) => {
-      if (socket.data.user.type !== 'driver') return; // passengers cannot change driver status
+    socket.on('driver:status', async (data) => {
+      if (socket.data.user.type !== 'driver') return;
       if (data?.isOnline !== undefined) {
         const statusPhone = socket.data.user.phone;
         if (data.isOnline) {
@@ -251,6 +253,15 @@ function setupSocket(io, svc) {
           logger.info(`Driver ${String(statusPhone).slice(0, 3)}*** went online`);
         } else {
           socket.leave('drivers:online');
+          try {
+            await dbRun("UPDATE drivers SET status='offline' WHERE phone=?", [statusPhone]);
+            await dbRun(
+              "UPDATE taxis SET status='offline' WHERE driver_id=(SELECT id FROM drivers WHERE phone=?)",
+              [statusPhone]
+            );
+          } catch (e) {
+            logger.error('driver:status offline DB error:', { message: e.message });
+          }
           logger.info(`Driver ${String(statusPhone).slice(0, 3)}*** went offline`);
         }
       }

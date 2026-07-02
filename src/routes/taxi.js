@@ -62,8 +62,10 @@ module.exports = function createTaxiRouter(svc) {
   // الإصلاح H1: phone يُقرأ من JWT بدلاً من req.body.phone
   router.post('/taxi/request', authenticatePassenger, async (req, res) => {
     try {
-      const { pickup, destination, pickupLat, pickupLng, destLat, destLng } = req.body;
+      const { pickup, destination, pickupLat, pickupLng, destLat, destLng, payment_method } = req.body;
       const phone = req.user.phone; // Single Source of Truth: JWT — نتجاهل أي phone من العميل
+      const validPaymentMethods = ['cash', 'wallet'];
+      const paymentMethod = validPaymentMethods.includes(payment_method) ? payment_method : 'cash';
       if (!pickup || !destination) {
         return res.status(400).json({ success: false, message: 'بيانات الرحلة ناقصة' });
       }
@@ -92,7 +94,8 @@ module.exports = function createTaxiRouter(svc) {
         pickupLng,
         destLat,
         destLng,
-        estimatedFare
+        estimatedFare,
+        paymentMethod
       );
 
       const tripId = result.lastID;

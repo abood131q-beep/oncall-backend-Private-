@@ -131,13 +131,13 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
      * ينشئ رحلة جديدة بحالة waiting_driver.
      * @returns {Promise<{lastID: number}>}
      */
-    create(phone, pickup, destination, pickupLat, pickupLng, destLat, destLng, estimatedFare) {
+    create(phone, pickup, destination, pickupLat, pickupLng, destLat, destLng, estimatedFare, paymentMethod = 'cash') {
       return dbRun(
         `INSERT INTO trips
            (user_phone, pickup, destination,
             pickup_lat, pickup_lng, dest_lat, dest_lng,
-            status, estimated_fare, route, rejected_drivers)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'waiting_driver', ?, '[]', '[]')`,
+            status, estimated_fare, payment_method, route, rejected_drivers)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'waiting_driver', ?, ?, '[]', '[]')`,
         [
           phone || null,
           pickup,
@@ -147,6 +147,7 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
           destLat || null,
           destLng || null,
           estimatedFare,
+          paymentMethod,
         ]
       );
     },
