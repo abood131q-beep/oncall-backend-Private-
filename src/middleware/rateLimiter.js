@@ -64,6 +64,7 @@ function phoneRateLimit(maxAttempts = 5, lockMs = 300000) {
       return res.status(429).json({
         success: false,
         message: `تم قفل الحساب مؤقتاً - انتظر ${remaining} ثانية`,
+        retryAfter: remaining,
       });
     }
 
@@ -76,9 +77,11 @@ function phoneRateLimit(maxAttempts = 5, lockMs = 300000) {
     if (record.count > maxAttempts) {
       record.lockedUntil = now + lockMs;
       phoneRateLimitMap.set(phone, record);
+      const lockSecs = Math.ceil(lockMs / 1000);
       return res.status(429).json({
         success: false,
-        message: 'محاولات كثيرة - تم قفل الحساب 5 دقائق',
+        message: `محاولات كثيرة - تم قفل الحساب ${Math.round(lockSecs / 60)} دقائق`,
+        retryAfter: lockSecs,
       });
     }
 
