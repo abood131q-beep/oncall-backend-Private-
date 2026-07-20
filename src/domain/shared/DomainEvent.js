@@ -10,14 +10,19 @@
  * type or a NEW version — never an edit (ADR-006 §6 event evolution).
  *
  * Envelope shape (frozen):
- *   { id, type, version, occurredAt, producer, subject, payload }
- *     id         — unique event id (idempotency key for consumers)
- *     type       — past-tense name, e.g. 'TripCompleted'
- *     version    — integer schema version, default 1
- *     occurredAt — ISO instant (from injected clock)
- *     producer   — owning context, e.g. 'trips'
- *     subject    — the aggregate ref this event is about (for per-subject order)
- *     payload    — frozen plain data (references, not copies)
+ *   { id, type, version, occurredAt, producer, subject,
+ *     correlationId, causationId, payload }
+ *     id            — unique event id (idempotency key for consumers)
+ *     type          — past-tense name, e.g. 'TripCompleted'
+ *     version       — integer schema version, default 1
+ *     occurredAt    — ISO instant (from injected clock)
+ *     producer      — owning context, e.g. 'trips'
+ *     subject       — the aggregate ref this event is about (per-subject order)
+ *     correlationId — request/workflow trace id shared across a causal chain;
+ *                     defaults to the event's own id when it starts a chain
+ *     causationId   — the id of the event/command that directly caused this one;
+ *                     null for a root event
+ *     payload       — frozen plain data (references, not copies)
  */
 
 let _counter = 0;
@@ -57,16 +62,42 @@ function createDomainEvent(spec, opts = {}) {
   }
   const clock = opts.clock || (() => new Date());
   const idFactory = opts.idFactory || defaultId;
+  const id = spec.id || idFactory();
 
   return deepFreeze({
-    id: spec.id || idFactory(),
+    id,
     type: spec.type,
     version: Number.isInteger(spec.version) ? spec.version : 1,
     occurredAt: (spec.occurredAt ? new Date(spec.occurredAt) : clock()).toISOString(),
     producer: spec.producer,
     subject: spec.subject || null,
+    // A root event correlates to itself; children inherit the chain's id.
+    correlationId: spec.correlationId || id,
+    causationId: spec.causationId || null,
     payload: spec.payload ? { ...spec.payload } : {},
   });
 }
 
-module.exports = { createDomainEvent, deepFreeze };
+/**
+ * follows — build an event caused by a parent event/command, propagating the
+ * trace chain automatically: correlationId is inherited, causationId is set to
+ * the parent's id. This is how a request is traced across a causal chain
+ * (#3 in the Phase 14.1 review).
+ *
+ * @param {object} parent an event/command carrying { id, correlationId }
+ * @param {object} spec   the new event spec (type, producer, payload, …)
+ * @param {object} [opts] { clock, idFactory }
+ */
+function follows(parent, spec, opts = {}) {
+  if (!parent || !parent.id) throw new Error('DomainEvent.follows: parent with id required');
+  return createDomainEvent(
+    {
+      ...spec,
+      correlationId: parent.correlationId || parent.id,
+      causationId: parent.id,
+    },
+    opts
+  );
+}
+
+module.exports = { createDomainEvent, follows, deepFreeze };
