@@ -15,6 +15,7 @@ function createAuditMetrics(opts = {}) {
   let verifications = 0;
   let verificationFailures = 0;
   let checksumFailures = 0;
+  let integrityFailures = 0;
   let providerFailures = 0;
   let eventFailures = 0;
   let latTotalMs = 0;
@@ -28,6 +29,7 @@ function createAuditMetrics(opts = {}) {
     if (!ok) verificationFailures += 1;
   };
   const recordChecksumFailure = () => (checksumFailures += 1);
+  const recordIntegrityFailure = () => (integrityFailures += 1);
   const recordProviderFailure = () => (providerFailures += 1);
   const recordEventFailure = () => (eventFailures += 1);
   function recordQueryLatency(ms) {
@@ -45,6 +47,7 @@ function createAuditMetrics(opts = {}) {
       verifications,
       verificationFailures,
       checksumFailures,
+      integrityFailures,
       providerFailures,
       eventFailures,
       avgQueryLatencyMs: latCount ? latTotalMs / latCount : 0,
@@ -64,6 +67,11 @@ function createAuditMetrics(opts = {}) {
         g('audit_verifications_total', 'Verifications run', s.verifications),
         g('audit_verification_failures_total', 'Verification failures', s.verificationFailures),
         g('audit_checksum_failures_total', 'Checksum failures', s.checksumFailures),
+        g(
+          'audit_integrity_failures_total',
+          'Integrity (chain/sequence) failures',
+          s.integrityFailures
+        ),
         g('audit_provider_failures_total', 'Provider failures', s.providerFailures),
         g('audit_event_failures_total', 'Event publication failures', s.eventFailures),
         g('audit_query_latency_ms_avg', 'Average query latency', s.avgQueryLatencyMs),
@@ -78,6 +86,7 @@ function createAuditMetrics(opts = {}) {
     recordQuery,
     recordVerification,
     recordChecksumFailure,
+    recordIntegrityFailure,
     recordProviderFailure,
     recordEventFailure,
     recordQueryLatency,

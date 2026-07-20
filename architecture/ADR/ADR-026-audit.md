@@ -75,3 +75,25 @@ no implementation classes.
 
 Delete `src/domain/audit/`, `src/application/audit/`, and `tests/unit/audit.test.js`. Nothing
 imports them at runtime, so removal is inert and every prior kernel is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Immutable snapshot** — `snapshot(namespace, auditId)` returns a deep-frozen record copy.
+- **Startup verification** — `verifyStartup()` checks provider + clock wiring.
+- **Provider / namespace-consistency verification** — `verifyProvider(namespace)` checks
+  count == scan length, `tail` == last record, and contiguous sequences.
+- **Chain reconciliation** — `reconcile(namespace)` returns the longest intact prefix
+  (`lastGoodSequence`, `firstBreak`) without mutating the immutable trail.
+- **Recovery after provider failure** — `recover(namespace)` reports the trustworthy boundary
+  (`intactThrough`) so consumers can resume from a known-good point; it never rewrites/deletes.
+- **Query-determinism verification** — `verifyQuery(spec)` runs a query twice and compares.
+- **Lifecycle + query history** — bounded ring buffers via `history()` and `queryHistory()`
+  (`historyLimit`, default 500).
+- **Structured diagnostics** — `diagnostics(namespace)` (count, chain, startup, metrics).
+- **Metrics** — added `audit_integrity_failures_total` (chain/sequence failures, distinct from
+  checksum failures).
+
+New optional dep: `historyLimit`. Tests: `tests/unit/audit-hardening.test.js`.

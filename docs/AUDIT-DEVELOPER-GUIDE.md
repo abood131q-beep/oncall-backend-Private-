@@ -90,6 +90,24 @@ Every record/query/verify is forced into the extension's namespace (`ext.<owner>
 `actor` defaulted to the owner, so an extension can only read and append to its own audit
 trail. `record` requires `audit:write`; `query`/`get`/`verify` require `audit:read`.
 
+## 6a. Production hardening (added in the completion pass)
+
+```js
+await A.snapshot(namespace, auditId); // deep-frozen, immutable record copy
+A.verifyStartup(); // { ok, problems } — call before trusting the engine
+await A.verifyProvider(namespace); // count/tail/sequence consistency
+await A.reconcile(namespace); // { ok, total, lastGoodSequence, firstBreak } — no rewrite
+await A.recover(namespace); // { ok, intactThrough, firstBreak } — trustworthy boundary
+await A.verifyQuery(spec); // query-determinism check
+await A.diagnostics(namespace); // chain + startup + metrics
+A.history(); // bounded lifecycle log
+A.queryHistory(); // bounded query log
+```
+
+Reconcile/recover never rewrite or delete the immutable trail — they only report the intact,
+trustworthy prefix. New metric: `audit_integrity_failures_total`. Extra optional dep:
+`historyLimit`.
+
 ## Out of scope (future work behind the provider port)
 
 Durable append logs (Storage/PostgreSQL/MongoDB/object storage), retention/rotation, and

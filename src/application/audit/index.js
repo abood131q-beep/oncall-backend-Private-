@@ -29,6 +29,7 @@ function createAuditPlatform(deps = {}) {
     clock: deps.clock,
     logger: deps.logger,
     idFactory: deps.idFactory,
+    historyLimit: deps.historyLimit,
   });
   return { audit, provider, metrics, AUDIT_EVENTS };
 }
