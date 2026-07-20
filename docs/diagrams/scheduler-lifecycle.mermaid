@@ -1,0 +1,18 @@
+stateDiagram-v2
+  [*] --> Scheduled: schedule*()
+  Scheduled --> Paused: pause()
+  Paused --> Scheduled: resume()
+  Scheduled --> Running: due + worker available
+  Running --> Completed: handler resolved (one-time)
+  Running --> Scheduled: handler resolved (recurring → next occurrence)
+  Running --> TimedOut: exceeded timeout (signal aborted)
+  Running --> Retrying: failure/timeout + retries remain
+  TimedOut --> Retrying: retries remain
+  Retrying --> Running: backoff elapsed + due
+  Running --> Failed: retries exhausted → dead-letter
+  TimedOut --> Failed: no retry → dead-letter
+  Scheduled --> Cancelled: cancel()
+  Running --> Cancelled: cancel() (abort in-flight)
+  Completed --> [*]
+  Failed --> [*]
+  Cancelled --> [*]

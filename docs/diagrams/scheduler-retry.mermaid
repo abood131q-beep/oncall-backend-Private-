@@ -1,0 +1,17 @@
+flowchart TD
+  RUN["Job executes (attempt N)"] --> OUT{Outcome}
+  OUT -->|success| DONE["Completed\n(recurring → reschedule)"]
+  OUT -->|throw| FAIL["Failure"]
+  OUT -->|timeout| TO["JobTimedOut\n(signal aborted)"]
+  TO --> FAIL
+  FAIL --> DECIDE{"retryPolicy.decide(retriesDone)"}
+  DECIDE -->|type=none| DLQ
+  DECIDE -->|retriesDone ≥ maxAttempts| DLQ["Dead-letter\n→ JobFailed"]
+  DECIDE -->|retry allowed| DELAY{Delay}
+  DELAY -->|fixed| DF["delayMs"]
+  DELAY -->|exponential| DE["min(delayMs × factor^retriesDone, maxDelayMs)"]
+  DF --> REQ["Retrying: nextRun = now + delay\n→ JobRetried"]
+  DE --> REQ
+  REQ --> RUN
+  DONE --> END([done])
+  DLQ --> END

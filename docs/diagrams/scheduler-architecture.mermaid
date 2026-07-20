@@ -1,0 +1,33 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph Platform["Scheduler Kernel Service — Phase 14.3.3"]
+    ENGINE["scheduler engine\nschedule/at/after/recurring\ncancel/pause/resume\nexists/list/status/runNow"]
+    POOL["worker pool\nconcurrency limit + isolation"]
+    QUEUE["ready set\npriority · nextRun · createdAt"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nowner-scoped scheduler() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    JOB["job (aggregate + transitions)"]
+    RETRY["retryPolicy"]
+    CRON["cron parser"]
+    SCH["schedule (nextRun)"]
+    EVENTS["events (catalog)"]
+  end
+
+  PORT["EventPublisher port (ADR-016)"]
+
+  SVC --> ENGINE
+  EXT -->|this.scheduler| ADAPTER --> ENGINE
+  ENGINE --> QUEUE --> POOL
+  ENGINE --> METRICS
+  ENGINE -->|uses| JOB
+  ENGINE -->|uses| RETRY
+  ENGINE -->|uses| CRON
+  ENGINE -->|uses| SCH
+  ENGINE -->|publish lifecycle| EVENTS --> PORT

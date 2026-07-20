@@ -1,0 +1,40 @@
+sequenceDiagram
+  autonumber
+  participant C as Caller / Driver
+  participant E as Engine
+  participant Q as Ready set
+  participant P as Worker pool
+  participant H as Job handler
+  participant EV as EventPublisher port
+
+  C->>E: schedule*(job) → jobId
+  E->>EV: JobScheduled
+  C->>E: tick(now)
+  E->>Q: pick due jobs (priority, nextRun, createdAt)
+  loop while capacity and due jobs remain
+    E->>P: acquire worker (running < concurrency)
+    E->>EV: JobStarted
+    P->>H: handler(ctx = jobId, attempt, signal, ...)
+    alt success
+      H-->>P: resolve
+      E->>EV: JobCompleted
+      opt recurring
+        E->>Q: reschedule next occurrence
+      end
+    else timeout
+      P->>H: signal.abort()
+      E->>EV: JobTimedOut
+      E->>E: apply retry policy
+    else throw
+      E->>E: apply retry policy
+    end
+    alt retry allowed
+      E->>Q: requeue (nextRun = now + backoff)
+      E->>EV: JobRetried
+    else exhausted
+      E->>E: push to dead-letter
+      E->>EV: JobFailed
+    end
+    E->>P: release worker
+  end
+  E-->>C: { started }
