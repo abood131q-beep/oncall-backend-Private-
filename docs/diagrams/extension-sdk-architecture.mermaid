@@ -1,0 +1,47 @@
+flowchart TB
+  subgraph Author["Extension Author"]
+    SUB["class MyExt extends Extension"]
+  end
+
+  subgraph SDK["Extension SDK (src/sdk/extensions) — Phase 14.3.1"]
+    EXT["Extension base class\nlifecycle · hooks · capabilities\nconfig · logger · events · health"]
+    ERR["errors.js\nExtensionError + typed errors"]
+    TK["testKit.js\nharness · mock ctx/ports/events/config"]
+  end
+
+  subgraph Platform["Extension Platform (ADR-017) — Phase 14.2"]
+    REG["registry\ninstall/enable/disable/upgrade/rollback"]
+    SBX["sandbox (deny-all)"]
+    HB["hookBus (isolation+timeout+breaker)"]
+    MET["metrics (Prometheus)"]
+    RES["dependencyResolver"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    MAN["manifest.validateManifest"]
+    CAP["capabilities vocabulary"]
+    HK["hooksCatalog"]
+    INT["integrity.checksum"]
+  end
+
+  subgraph Ports["Ports (the ONLY host surface)"]
+    PUB["EventPublisher port\npublish:events / subscribe:events"]
+    PRICE["read:pricing / read:config / …"]
+  end
+
+  SUB --> EXT
+  EXT -->|toPackage()| REG
+  EXT -.validates via.-> MAN
+  EXT -.validates via.-> CAP
+  EXT -.derives hooks from.-> HK
+  EXT -.checksum via.-> INT
+  EXT -->|"register(ctx, api)"| HB
+  REG --> SBX
+  REG --> HB
+  REG --> MET
+  REG --> RES
+  SBX -->|grants only declared+granted| Ports
+  EXT -->|publish/subscribe| PUB
+  EXT -->|reads| PRICE
+  TK -.drives.-> EXT
+  TK -.real semantics.-> HB

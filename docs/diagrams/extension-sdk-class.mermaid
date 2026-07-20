@@ -1,0 +1,76 @@
+classDiagram
+  class Extension {
+    +id: string
+    +version: string
+    +logger: Logger
+    +constructor(spec, opts)
+    +providesCapability(name) this
+    +beforeRideRequest(fn) this
+    +afterPayment(fn) this
+    +«...12 hook methods»(fn) this
+    +config() object
+    +reloadConfig() Promise
+    +validateConfig(candidate) object
+    +publish(event) Promise
+    +subscribe(type, handler) unsub
+    +healthy(detail)
+    +degraded(detail)
+    +failed(detail)
+    +notReady(detail)
+    +health() object
+    +runHealthCheck() Promise
+    +withCorrelation(id) this
+    +toPackage() Package
+    +unload() Promise
+    #onInstall()?
+    #onEnable()?
+    #onDisable()?
+    #onUnload()?
+    #onHealthCheck()?
+    #onConfigurationChanged(next, prev)?
+  }
+
+  class Package {
+    +manifest: Manifest
+    +bytes: string
+    +checksum: string
+    +register(ctx, api) teardown
+  }
+
+  class Logger {
+    +info(msg, meta)
+    +warn(msg, meta)
+    +error(msg, meta)
+    +debug(msg, meta)
+    note: auto-adds id, version, correlationId, timestamp
+  }
+
+  class ExtensionError
+  class ConfigurationError
+  class CapabilityError
+  class PermissionError
+  class HookRegistrationError
+  class ManifestError
+
+  ExtensionError <|-- ConfigurationError
+  ExtensionError <|-- CapabilityError
+  ExtensionError <|-- PermissionError
+  ExtensionError <|-- HookRegistrationError
+
+  Extension --> Package : toPackage()
+  Extension --> Logger : logger
+  Extension ..> ConfigurationError : validateConfig
+  Extension ..> CapabilityError : providesCapability
+  Extension ..> PermissionError : publish/subscribe
+  Extension ..> HookRegistrationError : hook(fn)
+  Extension ..> ManifestError : toPackage
+
+  class TestKit {
+    +harness(ext, opts) Driver
+    +createMockContext(ports)
+    +createMockPorts(overrides)
+    +createMockEvents()
+    +createMockConfig(initial)
+    +createMockLogger()
+  }
+  TestKit ..> Extension : drives
