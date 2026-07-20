@@ -74,3 +74,26 @@ not the engine is instantiated.
 
 Delete `src/domain/workflow/`, `src/application/workflow/`, and `tests/unit/workflow.test.js`.
 Nothing imports them at runtime, so removal is inert and every prior kernel is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Immutable snapshots** — `snapshot(workflowId)` returns a deep-frozen instance model.
+- **Transition-history ring buffer** — instance history is bounded by `historyLimit`
+  (default 1000) so a long-running/looping workflow can't grow memory without bound.
+- **Corruption detection** — a structurally invalid persisted record (missing
+  state/status/version/definition) is rejected on load rather than silently trusted.
+- **Startup + integrity verification** — `verifyStartup()` checks wiring; `verifyWorkflow(id)`
+  checks the state is declared and the history chain is contiguous and matches the current state.
+- **Workflow recovery + scheduler reconciliation** — `recover()` re-arms per-state timeout
+  timers for every running workflow after a restart (in-memory timers don't survive) and
+  reports corrupt records without throwing.
+- **Engine lifecycle history** — a bounded ring buffer via `history()`.
+- **Structured diagnostics** — `diagnostics()` (wiring, timers, chains, startup, metrics).
+- **Expanded metrics** — transition latency, workflow duration, scheduler reconciliations,
+  lock conflicts, storage failures, event-publication failures (with Prometheus lines).
+
+New optional deps: `historyLimit`, `engineHistoryLimit`. Tests:
+`tests/unit/workflow-hardening.test.js`.

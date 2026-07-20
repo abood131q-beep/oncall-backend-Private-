@@ -118,6 +118,22 @@ Definition names are prefixed with the extension id and workflows are tagged wit
 an extension can only see and drive its own workflows. Write ops require `workflow:write`, reads
 require `workflow:read`.
 
+## 6a. Production hardening (added in the completion pass)
+
+```js
+await engine.snapshot(workflowId); // deep-frozen, immutable instance model
+engine.verifyStartup(); // { ok, problems } — call before trusting the engine
+await engine.verifyWorkflow(workflowId); // integrity: declared state + contiguous history
+await engine.recover(); // re-arm timeouts after a restart; report corrupt records
+engine.diagnostics(); // wiring, active timers/chains, startup, metrics
+engine.history(); // bounded engine lifecycle log
+```
+
+Transition history is bounded by `historyLimit` (default 1000). Corrupt persisted records are
+rejected on load. New metrics: transition latency, workflow duration, scheduler
+reconciliations, lock conflicts, storage failures, event-publication failures. Extra optional
+deps: `historyLimit`, `engineHistoryLimit`.
+
 ## Out of scope (future work behind the same ports)
 
 Durable timers across process restarts, sub-workflows, and human-task / wait-for-signal

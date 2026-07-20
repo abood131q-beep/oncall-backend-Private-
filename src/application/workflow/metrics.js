@@ -18,6 +18,15 @@ function createWorkflowMetrics(opts = {}) {
   let latTotalMs = 0;
   let latCount = 0;
   let latLastMs = 0;
+  // Production hardening (A-001) — additive counters.
+  let schedulerReconciliations = 0;
+  let lockConflicts = 0;
+  let storageFailures = 0;
+  let eventPublicationFailures = 0;
+  let txLatTotalMs = 0;
+  let txLatCount = 0;
+  let durTotalMs = 0;
+  let durCount = 0;
 
   const recordStart = () => (started += 1);
   const recordCompleted = () => (completed += 1);
@@ -25,6 +34,22 @@ function createWorkflowMetrics(opts = {}) {
   const recordCancelled = () => (cancelled += 1);
   const recordTransition = () => (transitions += 1);
   const recordTimeout = () => (timeouts += 1);
+  const recordSchedulerReconciliation = () => (schedulerReconciliations += 1);
+  const recordLockConflict = () => (lockConflicts += 1);
+  const recordStorageFailure = () => (storageFailures += 1);
+  const recordEventFailure = () => (eventPublicationFailures += 1);
+  function recordTransitionLatency(ms) {
+    if (typeof ms === 'number' && ms >= 0) {
+      txLatTotalMs += ms;
+      txLatCount += 1;
+    }
+  }
+  function recordWorkflowDuration(ms) {
+    if (typeof ms === 'number' && ms >= 0) {
+      durTotalMs += ms;
+      durCount += 1;
+    }
+  }
   function recordLatency(ms) {
     if (typeof ms === 'number' && ms >= 0) {
       latTotalMs += ms;
@@ -53,6 +78,13 @@ function createWorkflowMetrics(opts = {}) {
       active: Math.max(0, started - terminated),
       avgLatencyMs: latCount ? latTotalMs / latCount : 0,
       lastLatencyMs: latLastMs,
+      // A-001 additions
+      schedulerReconciliations,
+      lockConflicts,
+      storageFailures,
+      eventPublicationFailures,
+      avgTransitionLatencyMs: txLatCount ? txLatTotalMs / txLatCount : 0,
+      avgWorkflowDurationMs: durCount ? durTotalMs / durCount : 0,
     };
   }
 
@@ -71,6 +103,24 @@ function createWorkflowMetrics(opts = {}) {
         g('workflow_active', 'Currently active (non-terminal) workflows', s.active),
         g('workflow_latency_ms_avg', 'Average operation latency', s.avgLatencyMs),
         g('workflow_latency_ms_last', 'Last operation latency', s.lastLatencyMs),
+        g(
+          'workflow_transition_latency_ms_avg',
+          'Average transition latency',
+          s.avgTransitionLatencyMs
+        ),
+        g('workflow_duration_ms_avg', 'Average workflow duration', s.avgWorkflowDurationMs),
+        g(
+          'workflow_scheduler_reconciliations_total',
+          'Scheduler reconciliations',
+          s.schedulerReconciliations
+        ),
+        g('workflow_lock_conflicts_total', 'Lock conflicts', s.lockConflicts),
+        g('workflow_storage_failures_total', 'Storage failures', s.storageFailures),
+        g(
+          'workflow_event_publication_failures_total',
+          'Event publication failures',
+          s.eventPublicationFailures
+        ),
       ].join('\n') + '\n'
     );
   }
@@ -83,6 +133,12 @@ function createWorkflowMetrics(opts = {}) {
     recordTransition,
     recordTimeout,
     recordLatency,
+    recordSchedulerReconciliation,
+    recordLockConflict,
+    recordStorageFailure,
+    recordEventFailure,
+    recordTransitionLatency,
+    recordWorkflowDuration,
     timeOp,
     snapshot,
     prometheus,

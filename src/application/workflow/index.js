@@ -30,6 +30,8 @@ function createWorkflowPlatform(deps = {}) {
     logger: deps.logger,
     engineId: deps.engineId,
     idFactory: deps.idFactory,
+    historyLimit: deps.historyLimit,
+    engineHistoryLimit: deps.engineHistoryLimit,
   });
   return { engine, metrics, WORKFLOW_EVENTS };
 }
