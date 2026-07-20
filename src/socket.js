@@ -31,17 +31,8 @@ function checkRateLimit(socket, event, maxPerMin) {
 }
 
 function setupSocket(io, svc) {
-  const {
-    dbGet,
-    dbRun,
-    formatTrip,
-    safeJSON,
-    getDistanceKm,
-    calculateFare,
-    clearCache,
-    tripTimers,
-    logger,
-  } = svc;
+  const { dbGet, dbRun, formatTrip, safeJSON, getDistanceKm, calculateFare, clearCache, logger } =
+    svc;
 
   // ─── Authentication Middleware ────────────────────────────────────────────────
   io.use((socket, next) => {
@@ -203,12 +194,8 @@ function setupSocket(io, svc) {
       if (socket.driverPhone) {
         try {
           await dbRun("UPDATE drivers SET status='offline' WHERE phone=?", [socket.driverPhone]);
-          for (const [key, timer] of tripTimers.entries()) {
-            if (key.includes(socket.driverPhone)) {
-              clearTimeout(timer);
-              tripTimers.delete(key);
-            }
-          }
+          // tripTimers مفاتيحها هي tripId (مثل "123") — لا يمكن مطابقتها برقم هاتف.
+          // التايمرات تُحلّ تلقائياً: عند انتهاء المهلة يستثني findNearestDriver() السائق الأوفلاين.
           logger.info(
             `Driver ${String(socket.driverPhone).slice(0, 3)}*** set offline on disconnect`
           );
@@ -225,6 +212,28 @@ function setupSocket(io, svc) {
     socket.on('driver:register', async () => {
       if (socket.data.user.type !== 'driver') return; // passengers cannot register as driver
       const registeredPhone = socket.data.user.phone;
+
+      // P6-06: فحص approval_status — الدفاع الثاني بعد auth.js
+      // يمنع أي سائق غير معتمد من الانضمام لـ drivers:online حتى مع JWT صالح
+      try {
+        const driverRow = await dbGet('SELECT approval_status FROM drivers WHERE phone = ?', [
+          registeredPhone,
+        ]);
+        if (!driverRow || driverRow.approval_status !== 'approved') {
+          socket.emit('driver:error', {
+            code: 'NOT_APPROVED',
+            message: 'حسابك لم يتم اعتماده بعد — لا يمكنك العمل حتى تتلقى إشعار الاعتماد.',
+          });
+          logger.warn(
+            `Driver ${String(registeredPhone).slice(0, 3)}*** register blocked (approval_status=${driverRow?.approval_status || 'unknown'})`
+          );
+          return;
+        }
+      } catch (e) {
+        logger.error('driver:register approval check error:', { message: e.message });
+        return; // fail-safe: لا ننضم عند خطأ DB
+      }
+
       socket.driverPhone = registeredPhone;
       if (!socket.rooms.has(`driver:${registeredPhone}`)) socket.join(`driver:${registeredPhone}`);
       socket.join('drivers:online');
@@ -249,6 +258,22 @@ function setupSocket(io, svc) {
       if (data?.isOnline !== undefined) {
         const statusPhone = socket.data.user.phone;
         if (data.isOnline) {
+          // P6-06: لا يمكن الانتقال لـ online إلا إذا كان approval_status = 'approved'
+          try {
+            const driverRow = await dbGet('SELECT approval_status FROM drivers WHERE phone = ?', [
+              statusPhone,
+            ]);
+            if (!driverRow || driverRow.approval_status !== 'approved') {
+              socket.emit('driver:error', {
+                code: 'NOT_APPROVED',
+                message: 'حسابك لم يتم اعتماده — لا يمكنك الانتقال إلى حالة Online.',
+              });
+              return;
+            }
+          } catch (e) {
+            logger.error('driver:status approval check error:', { message: e.message });
+            return;
+          }
           socket.join('drivers:online');
           logger.info(`Driver ${String(statusPhone).slice(0, 3)}*** went online`);
         } else {

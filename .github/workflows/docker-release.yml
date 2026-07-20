@@ -1,0 +1,129 @@
+# P7-01 — Production image pipeline: build → scan → SBOM → sign → push
+# Runs the checks that cannot execute in local sandboxes (base-image CVE scan,
+# multi-platform build, cosign signing). Gate: 0 Critical / 0 High CVEs.
+name: docker-release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # cosign keyless (OIDC)
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/oncall-backend
+
+jobs:
+  build-scan-sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3 # arm64 emulation
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (local, amd64) for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}:scan
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Gate: 0 Critical / 0 High ─────────────────────────────────────────
+      - name: Trivy vulnerability scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE }}:scan
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Generate SBOM (syft, CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}:scan
+          format: cyclonedx-json
+          artifact-name: sbom-oncall-backend.cdx.json
+
+      # ── Multi-platform push (only after the scan gate passes) ─────────────
+      - name: Build & push (linux/amd64, linux/arm64) with provenance
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max          # SLSA build provenance attestation
+          sbom: true                    # BuildKit image SBOM attestation
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless OIDC, by digest)
+        run: cosign sign --yes ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+
+      - name: Verify signature (gate — deployment refuses unsigned images)
+        run: |
+          cosign verify ${{ env.IMAGE }}@${{ steps.push.outputs.digest }} \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+      # ── Release artifacts: checksums, manifest, metadata ──────────────────
+      - name: Generate release artifacts
+        run: |
+          mkdir -p release
+          cp sbom-oncall-backend.cdx.json release/ 2>/dev/null || \
+            find . -name '*.cdx.json' -exec cp {} release/sbom.cdx.json \; -quit || true
+          cat > release/deployment-manifest.json <<EOF
+          {
+            "image": "${{ env.IMAGE }}",
+            "version": "${{ github.ref_name }}",
+            "digest": "${{ steps.push.outputs.digest }}",
+            "platforms": ["linux/amd64", "linux/arm64"],
+            "signed": true,
+            "signature": "cosign-keyless (GitHub OIDC)",
+            "deploy_command": "./deploy-release.sh ${{ github.ref_name }} rolling"
+          }
+          EOF
+          cat > release/build-metadata.json <<EOF
+          {
+            "revision": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "workflow_run": "${{ github.run_id }}",
+            "actor": "${{ github.actor }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          (cd release && sha256sum * > SHA256SUMS)
+      - name: Attach artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release/*
+          generate_release_notes: true

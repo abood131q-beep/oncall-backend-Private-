@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { adminApi, publicApi } from "../http-client.js";
+import { adminApi } from "../http-client.js";
 
 interface Trip {
   id: number;
@@ -112,7 +112,7 @@ export function registerTaxiTools(server: McpServer): void {
         .describe("The trip's numeric ID returned when the request was created"),
     },
     async ({ id }) => {
-      const response = await publicApi<{ success: boolean; trip: Trip }>(
+      const response = await adminApi<{ success: boolean; trip: Trip }>(
         "get",
         `/taxi/trips/${id}`
       );

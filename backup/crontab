@@ -1,0 +1,11 @@
+# OnCall backup schedule (P7-05) — UTC
+# frequent: SQLite tier-0 every 15 min → RPO ≤ 15 min
+*/15 * * * * backup.sh frequent >> /proc/1/fd/1 2>&1
+# daily full set 03:30
+30 3 * * * backup.sh daily >> /proc/1/fd/1 2>&1
+# weekly (Sunday 04:00)
+0 4 * * 0 backup.sh weekly >> /proc/1/fd/1 2>&1
+# monthly (1st, 04:30)
+30 4 1 * * backup.sh monthly >> /proc/1/fd/1 2>&1
+# automatic restore validation (Sunday 05:00, after weekly backup)
+0 5 * * 0 restore-test.sh >> /proc/1/fd/1 2>&1

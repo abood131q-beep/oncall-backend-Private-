@@ -40,6 +40,23 @@ interface DashboardResponse {
   database: { sizeKB: number; sizeMB: number; walMode: boolean; status: string };
   backup: { last: { name: string; date: string; sizeKB: number } | null; count: number };
   recentLogs: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
+  // P6-03 extended fields (optional for backward compat)
+  requestMetrics?: {
+    total: number;
+    error4xx: number;
+    error5xx: number;
+    slowRoutes: Array<{ route: string; count: number; avgMs: number; maxMs: number }>;
+  };
+  notifications?: {
+    isConfigured: boolean;
+    sent: number;
+    failed: number;
+    skipped: number;
+    broadcastCount: number;
+    lastSentAt: string | null;
+  };
+  recentErrors?: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
+  recentCrashes?: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -55,13 +72,31 @@ function formatBytes(bytes: number): string {
 /** Horizontal rule */
 const HR = "─".repeat(44);
 
+// ── Shared DB health type + helper ────────────────────────────────────────────
+interface DbHealthResponse {
+  success: boolean;
+  status: string;
+  integrity: string;
+  pageCount: number;
+  pageSize: number;
+  sizeKB: number;
+  sizeMB: number;
+  journalMode: string;
+  walCheckpoint: unknown;
+}
+
+/** Fetches GET /admin/db/health once; used by both verify_database and database_health. */
+async function fetchDbHealth(): Promise<DbHealthResponse> {
+  return adminApi<DbHealthResponse>("get", "/admin/db/health");
+}
+
 // ── Tool registration ─────────────────────────────────────────────────────────
 
 export function registerEngineeringTools(server: McpServer): void {
   // ─── 2. tail_logs ────────────────────────────────────────────
   server.tool(
     "tail_logs",
-    "Fetch the last N server log entries, optionally filtered by level (INFO | WARN | ERROR | OK). Returns a formatted log tail for debugging and monitoring. Default: last 50 entries, all levels.",
+    "Fetch the last N server log entries, optionally filtered by level (INFO | WARN | ERROR | OK | DEBUG | FATAL | SECURITY). Returns a formatted log tail for debugging and monitoring. Default: last 50 entries, all levels.",
     {
       n: z
         .number()
@@ -71,7 +106,7 @@ export function registerEngineeringTools(server: McpServer): void {
         .optional()
         .describe("Number of log entries to return (default: 50, max: 200)"),
       level: z
-        .enum(["INFO", "WARN", "ERROR", "OK"])
+        .enum(["INFO", "WARN", "ERROR", "OK", "DEBUG", "FATAL", "SECURITY"])
         .optional()
         .describe("Filter by log level"),
     },
@@ -262,10 +297,7 @@ export function registerEngineeringTools(server: McpServer): void {
     "Run a full SQLite integrity check (PRAGMA integrity_check). Returns 'ok' if the database is intact, or a list of problems if corruption is detected. Use database_health for a broader status overview.",
     {},
     async () => {
-      const r = await adminApi<{
-        success: boolean; status: string; integrity: string; sizeKB: number; pageCount: number;
-      }>("get", "/admin/db/health");
-
+      const r = await fetchDbHealth();
       const ok = r.integrity === "ok";
       const lines = [
         `🔍 Database Verification`,
@@ -511,11 +543,7 @@ export function registerEngineeringTools(server: McpServer): void {
     "Run SQLite PRAGMA integrity_check and return database health metrics: status (healthy/corrupted), page count, page size, total size, WAL mode, and journal mode.",
     {},
     async () => {
-      const r = await adminApi<{
-        success: boolean; status: string; integrity: string;
-        pageCount: number; pageSize: number; sizeKB: number; sizeMB: number;
-        journalMode: string; walCheckpoint: unknown;
-      }>("get", "/admin/db/health");
+      const r = await fetchDbHealth();
 
       const icon = r.status === "healthy" ? "✅" : "❌";
       const lines = [
@@ -578,6 +606,296 @@ export function registerEngineeringTools(server: McpServer): void {
       return {
         content: [{ type: "text", text: `🗑️  Logs cleared — ${response.cleared} entries removed from memory and disk.` }],
       };
+    }
+  );
+
+  // ─── P6-03 new tools ──────────────────────────────────────────
+
+  // ─── request_metrics ─────────────────────────────────────────
+  server.tool(
+    "request_metrics",
+    "Get HTTP request metrics: total request count, 4xx/5xx error counts, error rate, average/p95 response times, and the top 10 slowest routes by max response time.",
+    {
+      showSlowRoutes: z.boolean().optional().describe("Include slow route breakdown (default: true)"),
+    },
+    async ({ showSlowRoutes = true }) => {
+      const r = await adminApi<{
+        success: boolean;
+        requests: { total: number; error4xx: number; error5xx: number; errorRate: number };
+        performance: { avgMs: number; p95Ms: number; minMs: number; maxMs: number; sampledRequests: number; cpuPercent: number };
+        slowRoutes: Array<{ route: string; count: number; avgMs: number; maxMs: number }>;
+      }>("get", "/admin/metrics");
+
+      const lines = [
+        `📊 Request Metrics`,
+        HR,
+        `  Total Requests : ${r.requests?.total ?? 0}`,
+        `  4xx Errors     : ${r.requests?.error4xx ?? 0}`,
+        `  5xx Errors     : ${r.requests?.error5xx ?? 0}`,
+        `  Error Rate     : ${r.requests?.errorRate ?? 0}%`,
+        HR,
+        `  Avg Response   : ${r.performance?.avgMs ?? 0} ms`,
+        `  P95 Response   : ${r.performance?.p95Ms ?? 0} ms`,
+        `  Min / Max      : ${r.performance?.minMs ?? 0} / ${r.performance?.maxMs ?? 0} ms`,
+        `  Samples        : ${r.performance?.sampledRequests ?? 0}`,
+        `  CPU            : ${r.performance?.cpuPercent ?? 0}%`,
+        HR,
+      ];
+
+      if (showSlowRoutes && r.slowRoutes?.length) {
+        lines.push(`🐢 Slowest Routes (by max response time)`);
+        lines.push(HR);
+        for (const route of r.slowRoutes) {
+          lines.push(`  ${route.route}`);
+          lines.push(`    calls=${route.count}  avg=${route.avgMs}ms  max=${route.maxMs}ms`);
+        }
+        lines.push(HR);
+      }
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── slow_routes ─────────────────────────────────────────────
+  server.tool(
+    "slow_routes",
+    "Show the slowest API routes by maximum response time. Useful for identifying performance bottlenecks. Returns route, call count, average ms, and max ms.",
+    {
+      limit: z.number().int().min(1).max(50).optional().describe("Number of routes to show (default: 20)"),
+    },
+    async ({ limit = 20 }) => {
+      const r = await adminApi<{
+        success: boolean;
+        slowRoutes: Array<{ route: string; count: number; avgMs: number; maxMs: number; totalMs: number }>;
+      }>("get", "/admin/metrics");
+
+      const routes = (r.slowRoutes ?? []).slice(0, limit);
+      if (!routes.length) {
+        return { content: [{ type: "text", text: "No route data yet — make some API calls first." }] };
+      }
+
+      const lines = [`🐢 Slow Routes (top ${routes.length} by max response time)`, HR];
+      for (const [i, rt] of routes.entries()) {
+        lines.push(`  ${i + 1}. ${rt.route}`);
+        lines.push(`     calls=${rt.count}  avg=${rt.avgMs}ms  max=${rt.maxMs}ms`);
+      }
+      lines.push(HR);
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── error_summary ────────────────────────────────────────────
+  server.tool(
+    "error_summary",
+    "Get a summary of recent WARN/ERROR/FATAL log entries, plus request-level 4xx/5xx error counts. Useful for quickly spotting recurring errors.",
+    {
+      n: z.number().int().min(1).max(200).optional().describe("Number of error log entries (default: 50)"),
+    },
+    async ({ n = 50 }) => {
+      const [metrics, errors] = await Promise.all([
+        adminApi<{ success: boolean; requests: { total: number; error4xx: number; error5xx: number; errorRate: number } }>("get", "/admin/metrics"),
+        adminApi<{ success: boolean; errors: Array<{ timestamp: string; level: string; msg: string; data: unknown }> }>("get", `/admin/errors?n=${n}`),
+      ]);
+
+      const lines = [
+        `🚨 Error Summary`,
+        HR,
+        `  HTTP 4xx : ${metrics.requests?.error4xx ?? 0}`,
+        `  HTTP 5xx : ${metrics.requests?.error5xx ?? 0}`,
+        `  Error Rate: ${metrics.requests?.errorRate ?? 0}%`,
+        HR,
+        `📋 Recent Error Logs (last ${errors.errors?.length ?? 0})`,
+        HR,
+      ];
+
+      for (const e of (errors.errors ?? [])) {
+        const icon = e.level === "FATAL" ? "💀" : e.level === "ERROR" ? "❌" : "⚠️ ";
+        lines.push(`  ${icon} [${e.timestamp}] [${e.level}] ${e.msg}`);
+      }
+
+      lines.push(HR);
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── recent_errors ────────────────────────────────────────────
+  server.tool(
+    "recent_errors",
+    "Fetch the most recent WARN/ERROR/FATAL log entries from the error ring buffer. Use error_summary for a combined metrics+logs view.",
+    {
+      n: z.number().int().min(1).max(200).optional().describe("Number of entries (default: 50)"),
+    },
+    async ({ n = 50 }) => {
+      const r = await adminApi<{
+        success: boolean;
+        errors: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
+      }>("get", `/admin/errors?n=${n}`);
+
+      const entries = r.errors ?? [];
+      const lines = [`❌ Recent Errors (${entries.length})`, HR];
+      for (const e of entries) {
+        const icon = e.level === "FATAL" ? "💀" : e.level === "ERROR" ? "❌" : "⚠️ ";
+        const dataStr = e.data ? `  ${JSON.stringify(e.data)}` : "";
+        lines.push(`  ${icon} [${e.timestamp}] [${e.level}] ${e.msg}${dataStr}`);
+      }
+      lines.push(HR);
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── recent_crashes ───────────────────────────────────────────
+  server.tool(
+    "recent_crashes",
+    "Fetch recent FATAL log entries from the crash ring buffer. These represent uncaughtException or critical failures.",
+    {
+      n: z.number().int().min(1).max(50).optional().describe("Number of crash entries (default: 20)"),
+    },
+    async ({ n = 20 }) => {
+      const r = await adminApi<{
+        success: boolean;
+        crashes: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
+      }>("get", `/admin/crashes?n=${n}`);
+
+      const entries = r.crashes ?? [];
+      if (!entries.length) {
+        return { content: [{ type: "text", text: "✅ No crashes recorded." }] };
+      }
+
+      const lines = [`💀 Crash Reports (${entries.length})`, HR];
+      for (const e of entries) {
+        lines.push(`  💀 [${e.timestamp}] ${e.msg}`);
+        if (e.data && typeof e.data === "object") {
+          const d = e.data as Record<string, unknown>;
+          if (d.message) lines.push(`     Message: ${d.message}`);
+          if (d.stack)   lines.push(`     Stack: ${String(d.stack).split("\n").slice(0, 3).join(" | ")}`);
+        }
+      }
+      lines.push(HR);
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── security_events ─────────────────────────────────────────
+  server.tool(
+    "security_events",
+    "Fetch recent security events from the security log buffer: JWT failures, unauthorized admin attempts, and rate limit hits. Events are stored in a 200-entry ring buffer.",
+    {
+      n: z.number().int().min(1).max(200).optional().describe("Number of events (default: 50)"),
+    },
+    async ({ n = 50 }) => {
+      const r = await adminApi<{
+        success: boolean;
+        events: Array<{ timestamp: string; level: string; msg: string; data: unknown }>;
+      }>("get", `/admin/security-events?n=${n}`);
+
+      const events = r.events ?? [];
+      if (!events.length) {
+        return { content: [{ type: "text", text: "✅ No security events recorded." }] };
+      }
+
+      const lines = [`🔐 Security Events (${events.length})`, HR];
+      for (const e of events) {
+        const d = e.data && typeof e.data === "object" ? e.data as Record<string, unknown> : {};
+        const ctx = [d.ip, d.phone, d.path].filter(Boolean).join(" | ");
+        lines.push(`  🔐 [${e.timestamp}] ${e.msg}${ctx ? `  [${ctx}]` : ""}`);
+      }
+      lines.push(HR);
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── notification_statistics ──────────────────────────────────
+  server.tool(
+    "notification_statistics",
+    "Get FCM push notification statistics: total sent, failed, skipped (no device token or not configured), broadcast count, and last sent timestamp.",
+    {},
+    async () => {
+      const r = await adminApi<{
+        success: boolean;
+        notifications: {
+          isConfigured: boolean;
+          sent: number;
+          failed: number;
+          skipped: number;
+          broadcastCount: number;
+          lastSentAt: string | null;
+        };
+      }>("get", "/admin/notification-stats");
+
+      const n = r.notifications ?? {};
+      const lines = [
+        `🔔 Notification Statistics`,
+        HR,
+        `  FCM Configured : ${(n as Record<string, unknown>).isConfigured ? "✅ Yes" : "❌ No"}`,
+        `  Sent           : ${(n as Record<string, unknown>).sent ?? 0}`,
+        `  Failed         : ${(n as Record<string, unknown>).failed ?? 0}`,
+        `  Skipped        : ${(n as Record<string, unknown>).skipped ?? 0}`,
+        `  Broadcasts     : ${(n as Record<string, unknown>).broadcastCount ?? 0}`,
+        `  Last Sent      : ${(n as Record<string, unknown>).lastSentAt ?? "never"}`,
+        HR,
+      ];
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── online_statistics ────────────────────────────────────────
+  server.tool(
+    "online_statistics",
+    "Get real-time online statistics: passenger count, driver breakdown (online/busy/offline), active trips, waiting trips, and online user counts from the database.",
+    {},
+    async () => {
+      const d = await adminApi<DashboardResponse>("get", "/admin/dashboard");
+      const lines = [
+        `📡 Online Statistics`,
+        HR,
+        `  Passengers Online : ${d.passengers?.online ?? 0}`,
+        HR,
+        `  Drivers Online    : ${d.drivers?.online ?? 0}`,
+        `  Drivers Busy      : ${d.drivers?.busy ?? 0}`,
+        `  Drivers Offline   : ${d.drivers?.offline ?? 0}`,
+        `  Drivers Total     : ${d.drivers?.total ?? 0}`,
+        HR,
+        `  Active Trips      : ${d.trips?.active ?? 0}`,
+        `  Waiting Trips     : ${d.trips?.waiting ?? 0}`,
+        `  Completed Today   : ${d.trips?.completedToday ?? 0}`,
+        HR,
+        `  Socket Clients    : ${d.system?.socketClients ?? 0}`,
+        `  Users Today       : ${d.users?.activeToday ?? 0}`,
+        HR,
+      ];
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  // ─── active_sessions ─────────────────────────────────────────
+  server.tool(
+    "active_sessions",
+    "Get a breakdown of active Socket.IO sessions: total connected clients, passengers online, drivers online (socket vs DB), and scooter rides.",
+    {},
+    async () => {
+      const d = await adminApi<DashboardResponse>("get", "/admin/dashboard");
+      const lines = [
+        `🔌 Active Sessions`,
+        HR,
+        `  Total Socket Clients : ${d.system?.socketClients ?? 0}`,
+        HR,
+        `  Passengers (socket)  : ${d.passengers?.online ?? 0}`,
+        `  Drivers (socket)     : ${d.drivers?.onlineSocket ?? 0}`,
+        `  Drivers (DB online)  : ${d.drivers?.online ?? 0}`,
+        `  Drivers (DB busy)    : ${d.drivers?.busy ?? 0}`,
+        HR,
+        `  Active Taxi Trips    : ${d.trips?.active ?? 0}`,
+        `  Active Scooter Rides : ${d.scooters?.activeTrips ?? 0}`,
+        HR,
+      ];
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
     }
   );
 

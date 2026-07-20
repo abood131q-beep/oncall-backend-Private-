@@ -1,6 +1,18 @@
 const sqlite3 = require('sqlite3').verbose();
 
-const db = new sqlite3.Database('./oncall.db');
+// P6-05B: DB_PATH sourced from env.js (single source of truth).
+// env.js is guaranteed to load before database.js in server.js startup order.
+// Node.js module cache ensures env.js runs only once even with multiple requires.
+const { DB_PATH, IS_PRODUCTION } = require('./src/config/env');
+const db = new sqlite3.Database(DB_PATH);
+
+// P6-06 FIX: busyTimeout=0 → BEGIN IMMEDIATE يفشل فوراً عند وجود lock
+// السبب: sqlite3 Node.js يستخدم background thread واحد لكل connection.
+// إذا انتظر busy handler فيه، يُحجب الـ thread → لا تستطيع العمليات الأخرى
+// (db.get داخل Transaction A) من الاكتمال → deadlock حتى timeout.
+// الحل: نتيجة SQLITE_BUSY فورية + retry بـ setTimeout (JS level - non-blocking).
+// dbTransaction في src/config/database.js يتولى الـ retry.
+db.configure('busyTimeout', 0);
 
 db.serialize(() => {
   // ===== المستخدمون =====
@@ -167,44 +179,48 @@ db.serialize(() => {
     )
   `);
 
-  // ===== بيانات تجريبية =====
-  db.get('SELECT COUNT(*) as c FROM scooters', (err, row) => {
-    if (row && row.c === 0) {
-      db.run(
-        `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 001', 'SC001', 29.3759, 47.9774, 85, 'available')`
-      );
-      db.run(
-        `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 002', 'SC002', 29.3780, 47.9800, 60, 'available')`
-      );
-      db.run(
-        `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 003', 'SC003', 29.3800, 47.9750, 90, 'available')`
-      );
-    }
-  });
+  // ===== بيانات تجريبية (Development Only) =====
+  // P6-05G: لا تُدرَج بيانات تجريبية في بيئة الإنتاج.
+  // في الإنتاج يُنشئ المدير السكوترات والتاكسيات عبر لوحة التحكم.
+  if (!IS_PRODUCTION) {
+    db.get('SELECT COUNT(*) as c FROM scooters', (err, row) => {
+      if (row && row.c === 0) {
+        db.run(
+          `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 001', 'SC001', 29.3759, 47.9774, 85, 'available')`
+        );
+        db.run(
+          `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 002', 'SC002', 29.3780, 47.9800, 60, 'available')`
+        );
+        db.run(
+          `INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 003', 'SC003', 29.3800, 47.9750, 90, 'available')`
+        );
+      }
+    });
 
-  db.get('SELECT COUNT(*) as c FROM taxis', (err, row) => {
-    if (row && row.c === 0) {
-      db.run(
-        `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 001', 29.3765, 47.9785, 'online')`
-      );
-      db.run(
-        `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 002', 29.3790, 47.9820, 'online')`
-      );
-      db.run(
-        `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 003', 29.3820, 47.9750, 'online')`
-      );
-    }
-  });
+    db.get('SELECT COUNT(*) as c FROM taxis', (err, row) => {
+      if (row && row.c === 0) {
+        db.run(
+          `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 001', 29.3765, 47.9785, 'online')`
+        );
+        db.run(
+          `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 002', 29.3790, 47.9820, 'online')`
+        );
+        db.run(
+          `INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 003', 29.3820, 47.9750, 'online')`
+        );
+      }
+    });
 
-  db.get('SELECT COUNT(*) as c FROM users', (err, row) => {
-    if (row && row.c === 0) {
-      db.run(`INSERT INTO users (phone, name, balance) VALUES ('99999999', 'مستخدم تجريبي', 10)`);
-    }
-  });
-});
+    db.get('SELECT COUNT(*) as c FROM users', (err, row) => {
+      if (row && row.c === 0) {
+        db.run(`INSERT INTO users (phone, name, balance) VALUES ('99999999', 'مستخدم تجريبي', 10)`);
+      }
+    });
+  }
 
-// ===== البلاغات =====
-db.run(`
+  // ===== البلاغات =====
+  // L-008: نُقل داخل db.serialize() لضمان الترتيب الصحيح مع باقي الجداول
+  db.run(`
     CREATE TABLE IF NOT EXISTS reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -216,8 +232,8 @@ db.run(`
     )
   `);
 
-// ===== سجل رحلات السكوتر =====
-db.run(`
+  // ===== سجل رحلات السكوتر =====
+  db.run(`
     CREATE TABLE IF NOT EXISTS scooter_rides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       scooter_id INTEGER NOT NULL,
@@ -236,6 +252,39 @@ db.run(`
     )
   `);
 
+  // ===== Device Tokens — P6-02 =====
+  // UNIQUE(phone, device_token): منع تسجيل نفس الجهاز مرتين لنفس المستخدم
+  db.run(`
+    CREATE TABLE IF NOT EXISTS device_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      device_token TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      app_version TEXT DEFAULT '',
+      last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(phone, device_token)
+    )
+  `);
+
+  // ===== Refresh Tokens — P6-01 =====
+  db.run(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      token_hash TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'passenger',
+      driver_id INTEGER,
+      name TEXT,
+      expires_at INTEGER NOT NULL,
+      revoked INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+});
+
 // ===== Database Indexes للأداء =====
 // ALTER TABLE migrations have been consolidated into src/config/migrate.js (runMigrations)
 [
@@ -249,6 +298,15 @@ db.run(`
   'CREATE INDEX IF NOT EXISTS idx_transactions_phone ON transactions(phone)',
   'CREATE INDEX IF NOT EXISTS idx_notifications_phone ON notifications(phone)',
   'CREATE INDEX IF NOT EXISTS idx_scooter_rides_phone ON scooter_rides(user_phone)',
+  'CREATE INDEX IF NOT EXISTS idx_rt_hash ON refresh_tokens(token_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_rt_phone ON refresh_tokens(phone)',
+  // P6-02 — Device Tokens
+  'CREATE INDEX IF NOT EXISTS idx_dt_phone ON device_tokens(phone)',
+  'CREATE INDEX IF NOT EXISTS idx_dt_token ON device_tokens(device_token)',
+  // P6-06 indexes (idx_drivers_approval, idx_approval_logs_driver) are created
+  // in src/config/migrate.js — AFTER runMigrations() adds the approval_status
+  // column and driver_approval_logs table. Running them here (at module load,
+  // before migrations) causes: SQLITE_ERROR: no such column: approval_status.
 ].forEach((sql) => db.run(sql));
 
 module.exports = db;

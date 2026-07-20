@@ -51,13 +51,16 @@ function createScooterRepository({ dbGet, dbAll, dbRun }) {
 
     /**
      * يُحوِّل السكوتر إلى حالة riding ويُسجّل بداية الرحلة.
+     * Atomic test-and-set: يُضيف WHERE status='available' لمنع TOCTOU race condition.
+     * يُعيد { changes: 1 } عند النجاح، { changes: 0 } إذا سبق شخص آخر الفتح.
      * @param {number} scooterId
      * @param {string} phone
      * @param {number} startTime - timestamp
+     * @returns {Promise<{changes: number}>}
      */
     setRiding(scooterId, phone, startTime) {
       return dbRun(
-        'UPDATE scooters SET status=?, current_user_phone=?, ride_start_time=? WHERE id=?',
+        "UPDATE scooters SET status=?, current_user_phone=?, ride_start_time=? WHERE id=? AND status='available'",
         ['riding', phone, startTime, scooterId]
       );
     },

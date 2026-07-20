@@ -1,0 +1,18 @@
+OnCall — Architecture Verification (Phase 3.5)
+==========================================================
+Enterprise-layer files scanned: 26
+  domain          7
+  application     9
+  infrastructure  6
+  presentation    4
+----------------------------------------------------------
+  ✔ PASS  R1-no-framework-in-core
+  ✔ PASS  R2-no-sql-outside-infra
+  ✔ PASS  R3-presentation-no-domain
+  ✔ PASS  R3-controller-no-infra-db
+  ✔ PASS  R4-domain-pure
+  ✔ PASS  R5-application-downward-only
+  ✔ PASS  R6-no-cycles
+  ✔ PASS  R7-ports-asserted
+----------------------------------------------------------
+✅ ARCHITECTURE COMPLIANCE: PASS (0 violations)

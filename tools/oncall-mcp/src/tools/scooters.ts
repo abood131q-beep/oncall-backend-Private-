@@ -198,6 +198,44 @@ export function registerScooterTools(server: McpServer): void {
 
   // ─── 7. reset_all_scooters ───────────────────────────────────
   server.tool(
+    "end_scooter_ride",
+    "End an active scooter ride and calculate the fare. Provide the scooter ID and optional GPS location where the ride ended.",
+    {
+      scooter_id: z.number().int().positive().describe("ID of the scooter to return"),
+      end_lat: z.number().optional().describe("Latitude of drop-off location"),
+      end_lng: z.number().optional().describe("Longitude of drop-off location"),
+    },
+    async ({ scooter_id, end_lat, end_lng }) => {
+      const response = await adminApi<{ success: boolean; message?: string; fare?: number }>(
+        "post",
+        "/scooter/end-ride",
+        { scooterId: scooter_id, endLat: end_lat, endLng: end_lng }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
+    "unlock_scooter",
+    "Unlock a scooter and start a ride for a user. Requires scooter to be available, user to have sufficient balance (≥ 0.500 KD), and battery ≥ 10%.",
+    {
+      scooter_id: z.number().int().positive().describe("ID of the scooter to unlock"),
+    },
+    async ({ scooter_id }) => {
+      const response = await adminApi<{ success: boolean; message?: string; ride?: unknown }>(
+        "post",
+        "/scooter/unlock",
+        { scooterId: scooter_id }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
     "reset_all_scooters",
     "Reset ALL scooters to 'available' status and clear current users. Use when scooters are stuck in 'in_use' state due to app crashes.",
     {},

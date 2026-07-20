@@ -1,0 +1,48 @@
+# ── Secrets — NEVER bake into the image ──────────────────────────────────────
+.env
+.env.*
+secrets/
+
+# ── Runtime state (mounted as volumes, not baked) ────────────────────────────
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+backups/
+logs/
+
+# ── Dependencies (installed inside the image) ────────────────────────────────
+node_modules/
+
+# ── VCS / editors / scanners ─────────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+.claude/
+.scannerwork/
+.DS_Store
+.fuse_hidden*
+*.iml
+
+# ── Docs, reports, tests, dev tooling (not needed at runtime) ────────────────
+docs/
+tests/
+tools/
+scripts/
+*.md
+integration-test.mjs
+integration-test-results.txt
+run_tests.sh
+*.command
+.eslintrc.js
+.eslintignore
+.prettierrc.js
+.prettierignore
+
+# ── Docker files themselves ──────────────────────────────────────────────────
+Dockerfile
+.dockerignore
+
+# TLS certs + nginx config (mounted at runtime, not baked)
+certs/
+nginx/

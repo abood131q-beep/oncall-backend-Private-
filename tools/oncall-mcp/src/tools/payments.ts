@@ -115,7 +115,27 @@ export function registerPaymentTools(server: McpServer): void {
     }
   );
 
-  // ─── 5. get_fare_config ──────────────────────────────────────
+  // ─── 5. get_wallet_balance ───────────────────────────────────
+  // Security note: backend enforces IDOR check (req.params.phone === req.user.phone → 403).
+  // Only works for the authenticated user's own phone. Use get_user_by_phone for admin access.
+  server.tool(
+    "get_wallet_balance",
+    "Get the wallet balance via the /wallet/balance endpoint. IMPORTANT: enforces ownership check — only works when phone matches the JWT token's phone. For admin access to any user's balance, use get_user_by_phone instead.",
+    {
+      phone: z.string().min(3).describe("Phone number (must match the authenticated user's token)"),
+    },
+    async ({ phone }) => {
+      const response = await adminApi<{ success: boolean; balance: number }>(
+        "get",
+        `/wallet/balance/${encodeURIComponent(phone)}`
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 6. get_fare_config ──────────────────────────────────────
   server.tool(
     "get_fare_config",
     "Get the current pricing configuration: base fare, per-km rate, per-minute rate, minimum fare, surge multiplier, and pricing type (normal/peak/night).",

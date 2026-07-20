@@ -4,6 +4,7 @@ node_modules/
 # ─── Environment (NEVER commit secrets) ───────────────────────────────────────
 .env
 .env.local
+.env.production
 .env.*.local
 
 # ─── Database files (contain live data) ───────────────────────────────────────
@@ -50,3 +51,6 @@ run_phase*.command
 tools/oncall-mcp/dist/
 tools/oncall-mcp/node_modules/
 .claude/
+
+# ─── TLS certs (P7-03 — never commit private keys) ───
+certs/

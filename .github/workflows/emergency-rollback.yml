@@ -1,0 +1,45 @@
+# P7-06 — Emergency rollback (one click, production environment approval)
+# Restores the last known-good release recorded on the host (.last-good-release),
+# or an explicitly named version. Health-gated; fails loudly if the target
+# cannot become healthy (then: DR runbook §6).
+name: emergency-rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to roll back TO (empty = last known-good)"
+        required: false
+        default: ""
+      reason:
+        description: "Why (recorded in the run log)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy      # serializes with deploy.yml — no concurrent mutations
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Emergency rollback via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.DEPLOY_PATH }}
+            export ONCALL_IMAGE=ghcr.io/${{ github.repository_owner }}/oncall-backend
+            echo "EMERGENCY ROLLBACK — reason: ${{ inputs.reason }}"
+            if [ -n "${{ inputs.version }}" ]; then
+              echo "${{ inputs.version }}" > .last-good-release
+            fi
+            ./deploy-release.sh rollback

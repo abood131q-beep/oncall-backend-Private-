@@ -49,14 +49,16 @@ function createDriverRepository({ dbGet, dbAll, dbRun }) {
     },
 
     /**
-     * ينشئ سائقاً جديداً بحالة offline.
+     * ينشئ سائقاً جديداً بحالة offline وبانتظار الاعتماد (approval_status='pending').
+     * P6-06: approval_status هو مصدر الحقيقة — السائق الجديد لا يحصل على JWT حتى يُعتمَد.
      * @param {string} phone
      * @returns {Promise<object>} السائق الجديد
      */
     async create(phone) {
       const result = await dbRun(
-        'INSERT INTO drivers (phone, name, car_name, status) VALUES (?, ?, ?, ?)',
-        [phone, 'سائق جديد', '', 'offline']
+        `INSERT INTO drivers (phone, name, car_name, status, is_active, approval_status, approval_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, DATETIME('now'))`,
+        [phone, 'سائق جديد', '', 'offline', 0, 'pending']
       );
       return dbGet('SELECT * FROM drivers WHERE id = ?', [result.lastID]);
     },
@@ -129,6 +131,95 @@ function createDriverRepository({ dbGet, dbAll, dbRun }) {
     },
 
     /**
+     * P6-06: يُعيد السائقين الذين approval_status='pending' (بانتظار المراجعة).
+     * @returns {Promise<object[]>}
+     */
+    findPending() {
+      return dbAll(
+        `SELECT id, phone, name, car_name, plate, created_at
+         FROM drivers WHERE approval_status = 'pending' ORDER BY created_at ASC`
+      );
+    },
+
+    /**
+     * P6-06: يُحدِّث approval_status للسائق ويُحدِّث is_active بما يتوافق معه.
+     * approval_status هو مصدر الحقيقة — is_active يُشتَق منه للتوافق مع الكود القديم.
+     * @param {string} phone
+     * @param {'pending'|'approved'|'rejected'|'suspended'} status
+     * @param {{ reason?: string, adminPhone?: string }} [opts]
+     */
+    setApprovalStatus(phone, status, opts = {}) {
+      const VALID = ['pending', 'approved', 'rejected', 'suspended'];
+      if (!VALID.includes(status)) throw new Error(`approval_status غير صالح: ${status}`);
+
+      const isActive = status === 'approved' ? 1 : 0;
+
+      if (status === 'approved') {
+        return dbRun(
+          `UPDATE drivers
+           SET approval_status      = ?,
+               is_active            = ?,
+               approved_by          = ?,
+               approved_at          = DATETIME('now'),
+               approval_updated_at  = DATETIME('now'),
+               rejection_reason     = NULL,
+               suspended_reason     = NULL
+           WHERE phone = ?`,
+          [status, isActive, opts.adminPhone || null, phone]
+        );
+      }
+
+      if (status === 'rejected') {
+        return dbRun(
+          `UPDATE drivers
+           SET approval_status      = ?,
+               is_active            = ?,
+               rejection_reason     = ?,
+               approved_by          = ?,
+               approval_updated_at  = DATETIME('now')
+           WHERE phone = ?`,
+          [status, isActive, opts.reason || null, opts.adminPhone || null, phone]
+        );
+      }
+
+      if (status === 'suspended') {
+        return dbRun(
+          `UPDATE drivers
+           SET approval_status      = ?,
+               is_active            = ?,
+               suspended_reason     = ?,
+               approved_by          = ?,
+               approval_updated_at  = DATETIME('now'),
+               status               = 'offline'
+           WHERE phone = ?`,
+          [status, isActive, opts.reason || null, opts.adminPhone || null, phone]
+        );
+      }
+
+      // pending
+      return dbRun(
+        `UPDATE drivers
+         SET approval_status      = ?,
+             is_active            = ?,
+             approval_updated_at  = DATETIME('now')
+         WHERE phone = ?`,
+        [status, isActive, phone]
+      );
+    },
+
+    /**
+     * P6-06: يُسجِّل عملية اعتماد في driver_approval_logs.
+     * @param {{ driverPhone: string, adminPhone: string, action: string, reason?: string, ip?: string }} data
+     */
+    logApprovalAction({ driverPhone, adminPhone, action, reason, ip }) {
+      return dbRun(
+        `INSERT INTO driver_approval_logs (driver_phone, admin_phone, action, reason, ip)
+         VALUES (?, ?, ?, ?, ?)`,
+        [driverPhone, adminPhone, action, reason || null, ip || null]
+      );
+    },
+
+    /**
      * يجلب التاكسي المرتبط بسائق.
      * @param {number} driverId
      * @returns {Promise<object|null>}
@@ -143,8 +234,11 @@ function createDriverRepository({ dbGet, dbAll, dbRun }) {
      * @returns {Promise<object[]>}
      */
     getReviews(driverId) {
+      // إخفاء جزئي لرقم الراكب — منع تسريب PII للسائق
       return dbAll(
-        `SELECT t.rating, t.rating_comment, t.user_phone, t.created_at
+        `SELECT t.rating, t.rating_comment,
+                SUBSTR(t.user_phone, 1, 2) || '****' || SUBSTR(t.user_phone, -2) AS user_phone,
+                t.created_at
          FROM trips t
          WHERE t.driver_id = ? AND t.rating IS NOT NULL
          ORDER BY t.created_at DESC LIMIT 20`,

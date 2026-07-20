@@ -71,10 +71,14 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
     /**
      * يُعيد رحلات راكب معيّن.
      * @param {string} phone
+     * @param {number} [limit=100] - حد أقصى لعدد الرحلات (منع DoS بقوائم ضخمة)
      * @returns {Promise<object[]>}
      */
-    findByPassenger(phone) {
-      return dbAll('SELECT * FROM trips WHERE user_phone = ? ORDER BY created_at DESC', [phone]);
+    findByPassenger(phone, limit = 100) {
+      return dbAll('SELECT * FROM trips WHERE user_phone = ? ORDER BY created_at DESC LIMIT ?', [
+        phone,
+        limit,
+      ]);
     },
 
     /**
@@ -131,7 +135,17 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
      * ينشئ رحلة جديدة بحالة waiting_driver.
      * @returns {Promise<{lastID: number}>}
      */
-    create(phone, pickup, destination, pickupLat, pickupLng, destLat, destLng, estimatedFare, paymentMethod = 'cash') {
+    create(
+      phone,
+      pickup,
+      destination,
+      pickupLat,
+      pickupLng,
+      destLat,
+      destLng,
+      estimatedFare,
+      paymentMethod = 'cash'
+    ) {
       return dbRun(
         `INSERT INTO trips
            (user_phone, pickup, destination,
@@ -189,15 +203,18 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
 
     /**
      * يُسجّل قبول السائق للرحلة.
+     * Atomic test-and-set: يُضيف WHERE status='waiting_driver' لمنع TOCTOU race condition.
+     * يُعيد { changes: 1 } عند النجاح، { changes: 0 } إذا سبق سائق آخر القبول.
      * @param {number} tripId
      * @param {number} driverId
      * @param {string} driverName
      * @param {number|null} driverLat
      * @param {number|null} driverLng
+     * @returns {Promise<{changes: number}>}
      */
     acceptByDriver(tripId, driverId, driverName, driverLat, driverLng) {
       return dbRun(
-        'UPDATE trips SET status = ?, driver_id = ?, driver_name = ?, driver_lat = ?, driver_lng = ? WHERE id = ?',
+        "UPDATE trips SET status = ?, driver_id = ?, driver_name = ?, driver_lat = ?, driver_lng = ? WHERE id = ? AND status = 'waiting_driver'",
         ['accepted', driverId, driverName, driverLat, driverLng, tripId]
       );
     },
@@ -244,6 +261,35 @@ function createTripRepository({ dbGet, dbAll, dbRun }) {
         JSON.stringify(routeArray),
         id,
       ]);
+    },
+
+    /**
+     * يُعيد إحصائيات سائق مُجمَّعة من قاعدة البيانات مباشرةً.
+     * M-005: استبدال تحميل 1000 رحلة بـ SQL aggregation — O(1) بدلاً من O(n).
+     * @param {number} driverId
+     * @returns {Promise<object>} صف واحد يحتوي على جميع الإحصائيات
+     */
+    getStats(driverId) {
+      return dbGet(
+        `SELECT
+           COUNT(*)                                                                   AS totalTrips,
+           COUNT(CASE WHEN status = 'completed'  THEN 1 END)                         AS completedTrips,
+           COUNT(CASE WHEN status = 'cancelled'  THEN 1 END)                         AS cancelledTrips,
+           COUNT(CASE WHEN status != 'waiting_driver' THEN 1 END)                    AS respondedTrips,
+           COALESCE(SUM(CASE WHEN status = 'completed' THEN final_fare    ELSE 0 END), 0) AS totalEarnings,
+           COALESCE(SUM(CASE WHEN status = 'completed'
+                              AND date(created_at) = date('now','localtime')
+                             THEN final_fare ELSE 0 END), 0)                          AS todayEarnings,
+           COALESCE(SUM(CASE WHEN status = 'completed'
+                              AND created_at >= datetime('now','-7 days')
+                             THEN final_fare ELSE 0 END), 0)                          AS weekEarnings,
+           COALESCE(SUM(CASE WHEN status = 'completed' THEN duration_minutes ELSE 0 END), 0) AS totalMinutes,
+           COALESCE(AVG(CASE WHEN status = 'completed' AND rating IS NOT NULL THEN rating END), 5.0) AS avgRating,
+           COUNT(CASE WHEN status = 'completed' AND rating IS NOT NULL THEN 1 END)   AS ratedCount
+         FROM trips
+         WHERE driver_id = ?`,
+        [driverId]
+      );
     },
 
     /**

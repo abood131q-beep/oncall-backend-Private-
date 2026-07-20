@@ -9,6 +9,7 @@ module.exports = function createTaxiRouter(svc) {
   const router = express.Router();
   const {
     dbRun,
+    dbTransaction,
     dbAll,
     logger,
     authenticate,
@@ -29,6 +30,7 @@ module.exports = function createTaxiRouter(svc) {
     driverRepo,
     tripRepo,
     notifRepo,
+    notifService, // P6-02 — Push Notifications
   } = svc;
 
   // Helper: reset taxi status by driver FK (trip.driver_id = drivers.id, not taxis.id)
@@ -36,9 +38,9 @@ module.exports = function createTaxiRouter(svc) {
 
   // Authorization: هل يحق للمستخدم الوصول لهذه الرحلة؟
   const canAccessTrip = (user, trip) =>
-    user.role === 'admin'
-    || user.phone === trip.user_phone
-    || (user.driverId != null && user.driverId === trip.driver_id);
+    user.role === 'admin' ||
+    user.phone === trip.user_phone ||
+    (user.driverId != null && user.driverId === trip.driver_id);
 
   // ─── Driver Matcher (DriverMatcherService) ───────────────────────────────
   const { findNearestDriver, sendRequestToDriver } = createDriverMatcher(svc);
@@ -68,7 +70,8 @@ module.exports = function createTaxiRouter(svc) {
   // الإصلاح H1: phone يُقرأ من JWT بدلاً من req.body.phone
   router.post('/taxi/request', authenticatePassenger, async (req, res) => {
     try {
-      const { pickup, destination, pickupLat, pickupLng, destLat, destLng, payment_method } = req.body;
+      const { pickup, destination, pickupLat, pickupLng, destLat, destLng, payment_method } =
+        req.body;
       const phone = req.user.phone; // Single Source of Truth: JWT — نتجاهل أي phone من العميل
       const validPaymentMethods = ['cash', 'wallet'];
       const paymentMethod = validPaymentMethods.includes(payment_method) ? payment_method : 'cash';
@@ -251,13 +254,20 @@ module.exports = function createTaxiRouter(svc) {
           return res.status(403).json({ success: false, message: 'السائق غير موجود في النظام' });
         }
         const taxi = await driverRepo.findTaxi(driver.id);
-        await tripRepo.acceptByDriver(
+        // C-005: Atomic acceptance — WHERE status='waiting_driver' في الـ UPDATE
+        // يمنع TOCTOU race condition عندما يقبل سائقان في نفس اللحظة
+        const acceptResult = await tripRepo.acceptByDriver(
           tripId,
           driver.id,
           driver.name,
           taxi ? taxi.lat : null,
           taxi ? taxi.lng : null
         );
+        if (acceptResult.changes === 0) {
+          return res
+            .status(400)
+            .json({ success: false, message: 'تم قبول هذه الرحلة من سائق آخر' });
+        }
         if (taxi) await dbRun("UPDATE taxis SET status = 'busy' WHERE id = ?", [taxi.id]);
         const acceptTimer = tripTimers.get(`${tripId}`);
         if (acceptTimer) {
@@ -315,37 +325,47 @@ module.exports = function createTaxiRouter(svc) {
         await tripRepo.completeTrip(tripId, finalFare, totalDistKm, durationMinutes);
 
         if (trip.user_phone) {
-          await dbRun('BEGIN TRANSACTION');
           try {
-            const paymentMethod = trip.payment_method || 'cash';
-            const payResult = await processPayment(
-              tripId,
-              trip.user_phone,
-              finalFare,
-              paymentMethod
-            );
-            logger.success(
-              `Payment #${tripId}: ${paymentMethod} = ${finalFare} KD - ${payResult.success ? 'OK' : 'FAILED'}`
-            );
-            await dbRun(
-              "UPDATE trips SET payment_status = ? WHERE id = ?",
-              [payResult.success ? 'completed' : 'failed', tripId]
-            );
-            await notifRepo.sendForTrip(
-              trip.user_phone,
-              '🏁 وصلت بسلامة',
-              `الأجرة: ${finalFare.toFixed(3)} د.ك (${paymentMethod === 'wallet' ? 'محفظة' : 'نقداً'})`,
-              'trip_completed',
-              tripId
-            );
-            await dbRun('COMMIT');
+            // C-1 fix: مُسلسَل عبر dbTransaction (BEGIN IMMEDIATE + طابور داخلي)
+            // بدل BEGIN TRANSACTION الخام — يمنع تصادم "cannot start a transaction
+            // within a transaction" عند إكمال رحلتين متزامنتين. السلوك محفوظ.
+            await dbTransaction(async () => {
+              const paymentMethod = trip.payment_method || 'cash';
+              const payResult = await processPayment(
+                tripId,
+                trip.user_phone,
+                finalFare,
+                paymentMethod
+              );
+              logger.success(
+                `Payment #${tripId}: ${paymentMethod} = ${finalFare} KD - ${payResult.success ? 'OK' : 'FAILED'}`
+              );
+              await dbRun('UPDATE trips SET payment_status = ? WHERE id = ?', [
+                payResult.success ? 'completed' : 'failed',
+                tripId,
+              ]);
+              await notifRepo.sendForTrip(
+                trip.user_phone,
+                '🏁 وصلت بسلامة',
+                `الأجرة: ${finalFare.toFixed(3)} د.ك (${paymentMethod === 'wallet' ? 'محفظة' : 'نقداً'})`,
+                'trip_completed',
+                tripId
+              );
+            });
           } catch (payErr) {
-            await dbRun('ROLLBACK');
             logger.error('Payment transaction failed:', payErr.message);
           }
         }
         if (trip.driver_id) await resetTaxiOnline(trip.driver_id);
       } else if (status === 'cancelled') {
+        // State machine: منع إلغاء رحلة مكتملة أو ملغاة أو بلا سائق
+        const CANCELLABLE_STATUSES = ['waiting_driver', 'accepted', 'arrived', 'in_progress'];
+        if (!CANCELLABLE_STATUSES.includes(trip.status)) {
+          return res.status(400).json({
+            success: false,
+            message: 'لا يمكن إلغاء هذه الرحلة في حالتها الحالية',
+          });
+        }
         // Ownership: الراكب الأصلي أو سائق الرحلة يستطيع الإلغاء
         const isPassenger = req.user.phone === trip.user_phone;
         const cancelDriver = isPassenger ? null : await driverRepo.findByPhone(req.user.phone);
@@ -384,6 +404,39 @@ module.exports = function createTaxiRouter(svc) {
         );
         io.to(`passenger:${updated.user_phone}`).emit('trip:accepted', formatted);
         io.to(room).emit('trip:accepted', formatted);
+      }
+
+      // P6-02: Push Notification — أرسل فقط إذا كان الراكب غير متصل بالـ Socket
+      if (updated.user_phone && notifService?.isConfigured) {
+        const passengerRoom = `passenger:${updated.user_phone}`;
+        const passengerClients = io.sockets.adapter.rooms.get(passengerRoom);
+        const passengerOnline = passengerClients && passengerClients.size > 0;
+
+        if (!passengerOnline) {
+          let pushTitle = null;
+          let pushBody = null;
+
+          if (status === 'accepted') {
+            pushTitle = '✅ تم قبول رحلتك';
+            pushBody = `السائق ${updated.driver_name || ''} في الطريق إليك`;
+          } else if (status === 'arrived') {
+            pushTitle = '📍 السائق وصل';
+            pushBody = 'السائق في انتظارك — انزل الآن';
+          } else if (status === 'completed') {
+            const fare = updated.final_fare != null ? Number(updated.final_fare).toFixed(3) : '—';
+            pushTitle = '🏁 وصلت بسلامة';
+            pushBody = `الأجرة: ${fare} د.ك — شكراً لاستخدام On Call`;
+          } else if (status === 'cancelled') {
+            pushTitle = '❌ تم إلغاء الرحلة';
+            pushBody = 'يمكنك طلب سيارة جديدة في أي وقت';
+          }
+
+          if (pushTitle) {
+            notifService
+              .send(updated.user_phone, pushTitle, pushBody, { tripId: String(tripId), status })
+              .catch((e) => logger.error('FCM passenger push error:', { message: e.message }));
+          }
+        }
       }
 
       res.json({ success: true, trip: formatted });

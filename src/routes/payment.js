@@ -2,14 +2,13 @@
 
 const express = require('express');
 
-// ─── Payment Gateway Feature Flag (Task 7.7) ────────────────────────────────
-// يُقرأ مرة واحدة عند بدء التشغيل — لا overhead في كل request.
-// في بيئة التطوير: PAYMENT_ENABLED غير مُعيَّن أو false → يُرفض /wallet/charge.
+// P6-05B: read from env.js (single source of truth — replaces direct process.env access)
+// في بيئة التطوير: PAYMENT_ENABLED=false → يُرفض /wallet/charge بـ 503.
 // عند ربط بوابة دفع حقيقية (K-Net / Visa / Apple Pay):
 //   1. أضف منطق الـ gateway في handler.
 //   2. اضبط PAYMENT_ENABLED=true في .env.
 // المسار المستقبلي: payment intent → webhook → credit wallet (لا تضيف مباشرة).
-const PAYMENT_ENABLED = process.env.PAYMENT_ENABLED === 'true';
+const { PAYMENT_ENABLED } = require('../config/env');
 
 const PAYMENT_METHODS = {
   cash: { id: 'cash', name: 'نقداً', icon: '💵', available: true },

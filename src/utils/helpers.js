@@ -5,9 +5,13 @@
  * Pure functions with no side-effects and no external dependencies.
  */
 
-/** Parse JSON safely; return fallback on error */
+/**
+ * Parse JSON safely; return fallback on error.
+ * L-005: استخدام str == null بدلاً من !str — يمنع رجوع fallback للقيم الصحيحة مثل "false" أو "0".
+ */
 function safeJSON(str, fallback = []) {
-  if (!str) return fallback;
+  if (str == null || str === '') return fallback;
+  if (typeof str !== 'string') return str; // already parsed object
   try {
     return JSON.parse(str);
   } catch {
@@ -28,7 +32,8 @@ function sanitize(str) {
 function validatePhone(phone) {
   if (!phone) return false;
   const p = String(phone).trim();
-  return p.length >= 3 && p.length <= 20 && /^[0-9+\-\s]+$/.test(p);
+  // Must be 3-20 chars, only digits/+/-/spaces, and contain at least one digit
+  return p.length >= 3 && p.length <= 20 && /^[0-9+\-\s]+$/.test(p) && /[0-9]/.test(p);
 }
 
 /** Validate geographic coordinates */

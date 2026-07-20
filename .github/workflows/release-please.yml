@@ -1,0 +1,21 @@
+# P7-06 — Automatic semantic versioning + release notes (conventional commits)
+# On every merge to main, release-please maintains a release PR; merging that PR
+# creates the semver git tag + GitHub Release with generated notes, which then
+# triggers docker-release.yml (build → scan → sign → publish).
+name: release-please
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: node

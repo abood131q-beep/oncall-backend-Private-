@@ -15,11 +15,17 @@
  *  - Security hdrs: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
  */
 
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 
+// P6-05B: CORS origins sourced from env.js (single source of truth).
+// ALLOWED_ORIGINS = production domains (e.g. https://admin.oncall.app).
+// Localhost regexes are always included for development compatibility.
+const { ALLOWED_ORIGINS } = require('../config/env');
+
 const CORS_OPTIONS = {
-  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
+  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, ...ALLOWED_ORIGINS],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token'],
   credentials: true,
@@ -59,7 +65,7 @@ function setupMiddleware(app, { sanitizeBody, normalLimit, metricsMiddleware, lo
 
   // ─── Core middleware ──────────────────────────────────────────────────────
   app.use((req, res, next) => {
-    req.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    req.id = crypto.randomUUID(); // P6-03: proper UUID v4 for request tracing
     res.setHeader('X-Request-ID', req.id);
     next();
   });

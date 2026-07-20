@@ -18,6 +18,7 @@ module.exports = function createScootersRouter(svc) {
     notifRepo,
     validateCoords,
     dbRun, // لعمليات taxis في resetAll — سيُنقل لاحقاً
+    dbTransaction,
   } = svc;
 
   // ===== قائمة السكوترات =====
@@ -78,7 +79,14 @@ module.exports = function createScootersRouter(svc) {
         return res.status(400).json({ success: false, message: 'بطارية السكوتر منخفضة جداً' });
 
       const startTime = Date.now();
-      await scooterRepo.setRiding(scooterId, phone, startTime);
+      // C-004: Atomic unlock — يمنع TOCTOU race condition
+      // WHERE status='available' في الـ UPDATE يضمن أن شخصاً آخر لم يسبق الفتح
+      const lockResult = await scooterRepo.setRiding(scooterId, phone, startTime);
+      if (lockResult.changes === 0) {
+        return res
+          .status(409)
+          .json({ success: false, message: 'السكوتر غير متاح — تم فتحه للتو من مستخدم آخر' });
+      }
       clearCache('scooters');
 
       const rideResult = await scooterRepo.createRide(scooterId, phone, startTime);
@@ -135,46 +143,47 @@ module.exports = function createScootersRouter(svc) {
       const batteryUsed = Math.min(scooter.battery - 5, Math.round(durationMinutes * 0.5));
       const newBattery = Math.max(5, scooter.battery - batteryUsed);
 
-      await dbRun('BEGIN TRANSACTION');
       try {
-        await scooterRepo.setAvailable(
-          scooterId,
-          newBattery,
-          endLat,
-          endLng,
-          scooter.lat,
-          scooter.lng
-        );
-        clearCache('scooters');
-
-        await scooterRepo.endRideRecord(
-          scooterId,
-          phone,
-          endTime,
-          durationMinutes,
-          fare,
-          endLat,
-          endLng
-        );
-
-        // Atomic deduct — prevents race condition if end-ride called concurrently
-        const deductResult = await walletRepo.deductBalanceSafe(phone, fare);
-        const newBalance = deductResult.balanceAfter ?? 0;
-        if (deductResult.success) {
-          const balanceBefore = newBalance + fare;
-          await walletRepo.logTransaction(
-            phone,
-            'scooter_payment',
-            fare,
-            balanceBefore,
-            newBalance,
-            `أجرة سكوتر ${durationMinutes} دقيقة`
+        // C-1 fix: مُسلسَل عبر dbTransaction بدل BEGIN TRANSACTION الخام —
+        // يمنع تصادم المعاملات عند إنهاء رحلتَي سكوتر متزامنتين. السلوك محفوظ.
+        await dbTransaction(async () => {
+          await scooterRepo.setAvailable(
+            scooterId,
+            newBattery,
+            endLat,
+            endLng,
+            scooter.lat,
+            scooter.lng
           );
-        }
-        await dbRun('COMMIT');
+          clearCache('scooters');
+
+          await scooterRepo.endRideRecord(
+            scooterId,
+            phone,
+            endTime,
+            durationMinutes,
+            fare,
+            endLat,
+            endLng
+          );
+
+          // Atomic deduct — prevents race condition if end-ride called concurrently
+          const deductResult = await walletRepo.deductBalanceSafe(phone, fare);
+          const newBalance = deductResult.balanceAfter ?? 0;
+          if (deductResult.success) {
+            const balanceBefore = newBalance + fare;
+            await walletRepo.logTransaction(
+              phone,
+              'scooter_payment',
+              fare,
+              balanceBefore,
+              newBalance,
+              `أجرة سكوتر ${durationMinutes} دقيقة`
+            );
+          }
+        });
         logger.success(`Scooter #${scooterId} ride ended: ${durationMinutes}min = ${fare} KD`);
       } catch (txErr) {
-        await dbRun('ROLLBACK');
         logger.error('Scooter end-ride transaction failed:', txErr.message);
         return res.status(500).json({ success: false, message: 'خطأ في إنهاء الرحلة' });
       }

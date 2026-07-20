@@ -1,0 +1,52 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# OnCall — Backup & DR overlay (P7-05)
+#   docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml \
+#                  -f docker-compose.backup.yml up -d
+# Internal network only. Backups land in the `dr-archive` named volume,
+# encrypted (gpg AES256). For true disaster survival, sync /archive off-host
+# (see runbook §8 — off-site replication).
+# ═════════════════════════════════════════════════════════════════════════════
+
+services:
+  backup:
+    build: ./backup
+    image: oncall-backup:1.0.0
+    container_name: oncall-backup
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]
+    environment:
+      TZ: UTC
+    volumes:
+      - backend-data:/data:ro              # live SQLite (read-only: .backup API)
+      - backend-backups:/app-backups:ro    # app-level backups (backup.js)
+      - dr-archive:/archive                # encrypted bundles + retention tiers
+      # Config sources (read-only)
+      - ./docker-compose.prod.yml:/config/docker-compose.prod.yml:ro
+      - ./docker-compose.monitoring.yml:/config/docker-compose.monitoring.yml:ro
+      - ./docker-compose.backup.yml:/config/docker-compose.backup.yml:ro
+      - ./nginx:/config/nginx:ro
+      - ./monitoring:/config/monitoring:ro
+      - ./.env.example:/config/.env.example:ro
+      - ./deploy.sh:/config/deploy.sh:ro
+      - ./secrets:/config/secrets:ro       # metadata (names+checksums) only — values excluded
+    secrets:
+      - postgres_password
+      - redis_password
+      - backup_encryption_key
+    tmpfs:
+      - /work:size=256m
+      - /tmp:size=16m
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+volumes:
+  dr-archive:
+
+secrets:
+  backup_encryption_key:
+    file: ./secrets/backup_encryption_key.txt

@@ -278,4 +278,77 @@ export function registerTripTools(server: McpServer): void {
       };
     }
   );
+
+  // ─── 11. reject_trip ─────────────────────────────────────────
+  server.tool(
+    "reject_trip",
+    "Driver rejects (declines) a trip offer. NOTE: requires a driver JWT token — will fail with admin token (403).",
+    {
+      id: z.number().int().positive().describe("Trip ID to reject"),
+    },
+    async ({ id }) => {
+      const response = await adminApi<{ success: boolean }>(
+        "post",
+        `/taxi/trips/${id}/reject`
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 12. rate_passenger ──────────────────────────────────────
+  server.tool(
+    "rate_passenger",
+    "Driver rates a passenger after a completed trip (1–5 stars, optional comment). NOTE: requires a driver JWT token — will fail with admin token (403).",
+    {
+      id: z.number().int().positive().describe("Trip ID"),
+      rating: z.number().min(1).max(5).describe("Rating 1-5"),
+      comment: z.string().optional().describe("Optional comment"),
+    },
+    async ({ id, rating, comment }) => {
+      const response = await adminApi<{ success: boolean }>(
+        "post",
+        `/taxi/trips/${id}/rate-passenger`,
+        { rating, comment }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 13. update_driver_location ──────────────────────────────
+  server.tool(
+    "update_driver_location",
+    "Update the driver's GPS location for an active trip (HTTP fallback — normally done via Socket.IO). NOTE: requires a driver JWT token — will fail with admin token (403).",
+    {
+      trip_id: z.number().int().positive().describe("Active trip ID"),
+      lat: z.number().describe("Latitude"),
+      lng: z.number().describe("Longitude"),
+    },
+    async ({ trip_id, lat, lng }) => {
+      const response = await adminApi<{ success: boolean }>(
+        "post",
+        "/taxi/update-location",
+        { tripId: trip_id, lat, lng }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 14. get_driver_active_trips ─────────────────────────────
+  server.tool(
+    "get_driver_active_trips",
+    "Get the driver's currently active (accepted/in-progress) trips. NOTE: requires a driver JWT token — will fail with admin token (403).",
+    {},
+    async () => {
+      const trips = await adminApi<Trip[]>("get", "/taxi/trips");
+      return {
+        content: [{ type: "text", text: JSON.stringify(trips, null, 2) }],
+      };
+    }
+  );
 }

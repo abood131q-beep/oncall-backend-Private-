@@ -1,19 +1,47 @@
 name: OnCall CI
 
 on:
+  # Architecture compliance is mandatory for every code change.
   push:
-    branches: [main, master, dev, staging]
   pull_request:
-    branches: [main, master]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Job 0: Security Audit (P6-06A)
+  # npm audit --audit-level=high يفشل البناء إذا وُجدت ثغرة high/critical
+  # ─────────────────────────────────────────────────────────────────────
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (high + critical only)
+        run: npm audit --audit-level=high
+
+      - name: MCP npm audit
+        working-directory: tools/oncall-mcp
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
   # ─────────────────────────────────────────────────────────────────────
   # Job 1: Lint + Format
   # ─────────────────────────────────────────────────────────────────────
@@ -45,6 +73,7 @@ jobs:
   build:
     name: Build & Syntax Check
     runs-on: ubuntu-latest
+    needs: architecture
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,7 +110,7 @@ jobs:
   test:
     name: Backend Tests
     runs-on: ubuntu-latest
-    needs: build
+    needs: lint
 
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
@@ -113,6 +142,9 @@ jobs:
       - name: Build MCP (needed for MCP tests)
         working-directory: tools/oncall-mcp
         run: npm ci && npm run build
+
+      - name: Run unit tests (repositories)
+        run: npm run test:unit
 
       - name: Run full test suite
         run: bash run_tests.sh 2>&1 | tee test_output.txt
@@ -152,7 +184,7 @@ jobs:
   mcp-test:
     name: MCP Server Tests
     runs-on: ubuntu-latest
-    needs: build
+    needs: test
 
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
@@ -206,12 +238,87 @@ jobs:
         run: kill $(cat /tmp/server.pid) 2>/dev/null || true
 
   # ─────────────────────────────────────────────────────────────────────
+  # Job 5: Architecture Governance Gate (Phase 3.6)
+  # Executes after all tests and before the build. The verifier exits non-zero
+  # for every CRITICAL ADR violation, which blocks the workflow and merge.
+  # ─────────────────────────────────────────────────────────────────────
+  architecture:
+    name: Architecture Verification
+    runs-on: ubuntu-latest
+    needs: mcp-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Architecture Verification
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          node architecture/compliance/verify-architecture.mjs | tee architecture-verification.log
+          VERIFY_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          VIOLATION_COUNT=$(grep -cE '^  \[(CRITICAL|MAJOR)\]' architecture-verification.log || true)
+          VIOLATIONS="${VIOLATION_COUNT} violation(s)"
+
+          if [ "$VERIFY_STATUS" -ne 0 ]; then
+            echo "::error title=Architecture Verification FAIL::${VIOLATIONS}; CRITICAL architecture violation(s) block this workflow."
+            echo "❌ Architecture Verification: FAIL (${VIOLATIONS})"
+            exit "$VERIFY_STATUS"
+          fi
+
+          echo "✅ Architecture Verification: PASS (${VIOLATIONS})"
+
+      - name: Upload architecture verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-verification-${{ github.run_number }}
+          path: architecture-verification.log
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────
+  # A/B Compatibility Gate (Phase 12: C5) — fail CI on ANY public-contract drift
+  # ─────────────────────────────────────────────────────────────────────
+  ab-compat:
+    name: A/B Compatibility
+    runs-on: ubuntu-latest
+    needs: architecture
+    env:
+      JWT_SECRET: ci-ab-secret-0123456789abcdef0123456789abcdef
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run ALL A/B compatibility harnesses (byte-identical or fail)
+        run: npm run test:ab
+      - name: Unit coverage report
+        run: npm run test:coverage || true
+
+  # ─────────────────────────────────────────────────────────────────────
   # Summary — يظهر في GitHub PR checks
   # ─────────────────────────────────────────────────────────────────────
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [lint, build, test, mcp-test]
+    needs: [security, lint, test, mcp-test, architecture, build, ab-compat]
     if: always()
     steps:
       - name: Check all jobs
@@ -219,12 +326,17 @@ jobs:
           echo "┌─────────────────────────────────┐"
           echo "│       OnCall CI Summary          │"
           echo "├─────────────────────────────────┤"
+          echo "│ Security:  ${{ needs.security.result }}"
           echo "│ Lint:      ${{ needs.lint.result }}"
-          echo "│ Build:     ${{ needs.build.result }}"
           echo "│ Tests:     ${{ needs.test.result }}"
           echo "│ MCP Tests: ${{ needs.mcp-test.result }}"
+          echo "│ Architecture Verification: ${{ needs.architecture.result }}"
+          echo "│ Build:     ${{ needs.build.result }}"
           echo "└─────────────────────────────────┘"
-          if [ "${{ needs.lint.result }}" != "success" ] || \
+          if [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.mcp-test.result }}" != "success" ] || \
+             [ "${{ needs.architecture.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "❌ CI Failed"

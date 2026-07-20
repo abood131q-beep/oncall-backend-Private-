@@ -1,0 +1,63 @@
+# OnCall — Prometheus alert rules (P7-04)
+groups:
+  - name: oncall-platform
+    rules:
+      - alert: BackendDown
+        expr: probe_success{job="backend-health"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "OnCall backend is DOWN"
+          description: "/health probe failing for 1m — riders and drivers are impacted."
+
+      - alert: HighCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host CPU > 85% for 10m"
+
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host memory > 90% for 10m"
+
+      - alert: DiskNearlyFull
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 < 10
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Disk < 10% free"
+          description: "SQLite DB, WAL, and backups share this disk — act before it fills."
+
+      - alert: DatabaseUnavailable
+        expr: pg_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL is unreachable"
+
+      - alert: RedisUnavailable
+        expr: redis_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis is unreachable"
+
+      - alert: CertificateExpirySoon
+        expr: (probe_ssl_earliest_cert_expiry{job="tls-cert"} - time()) / 86400 < 14
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "TLS certificate expires in < 14 days"
+
+      - alert: HighHttp5xx
+        expr: probe_http_status_code{job="backend-health"} >= 500
+          or (rate(nginx_http_requests_total[5m]) > 1 and probe_success{job="backend-health"} == 0)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Backend returning 5xx"
+          description: "Edge-level 5xx signal. Precise per-status-code alerting lands with the app /metrics endpoint (backlog M-5)."

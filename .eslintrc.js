@@ -38,6 +38,7 @@ module.exports = {
 
     // ─── Node.js ─────────────────────────────────────────────────────────
     'node/no-unsupported-features/es-syntax': 'off', // Node 22 يدعم كل شيء
+    'node/no-unsupported-features/es-builtins': 'off', // Node 22 يدعم Promise.allSettled و Object.fromEntries
     'node/no-missing-require': 'error',
     'node/no-extraneous-require': 'error',
     'node/no-unpublished-require': 'off', // devDependencies مسموحة

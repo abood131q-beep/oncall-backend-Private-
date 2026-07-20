@@ -12,6 +12,10 @@
  *  const { getPlacesAutocomplete, getPlaceDetails } = require('./src/services/places');
  */
 
+const logger = require('../utils/logger');
+// P6-05B: read key from env.js (single source of truth)
+const { GOOGLE_MAPS_API_KEY } = require('../config/env');
+
 const MAPS_BASE = 'https://maps.googleapis.com/maps/api/place';
 const DEFAULT_LOCATION = 'location=29.3759,47.9774&radius=50000';
 
@@ -25,9 +29,9 @@ const DEFAULT_LOCATION = 'location=29.3759,47.9774&radius=50000';
 async function getPlacesAutocomplete(input, lat, lng) {
   if (!input) return { predictions: [] };
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — autocomplete disabled');
+    logger.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — autocomplete disabled');
     return { predictions: [] };
   }
 
@@ -53,7 +57,7 @@ async function getPlacesAutocomplete(input, lat, lng) {
     };
   } catch (err) {
     clearTimeout(timeoutId);
-    console.error('[PlacesService] autocomplete error:', err.message);
+    logger.error('[PlacesService] autocomplete error:', { message: err.message });
     return { predictions: [] };
   }
 }
@@ -66,9 +70,9 @@ async function getPlacesAutocomplete(input, lat, lng) {
 async function getPlaceDetails(placeId) {
   if (!placeId) return { result: null };
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — details disabled');
+    logger.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — details disabled');
     return { result: null };
   }
 
@@ -88,7 +92,7 @@ async function getPlaceDetails(placeId) {
     return await response.json();
   } catch (err) {
     clearTimeout(timeoutId);
-    console.error('[PlacesService] details error:', err.message);
+    logger.error('[PlacesService] details error:', { message: err.message });
     return { result: null };
   }
 }

@@ -1,0 +1,33 @@
+OnCall — Architecture Verification — CI Gate Execution Log
+Generated: 2026-07-20T14:08:10Z
+Command: node architecture/compliance/verify-architecture.mjs
+================================================================
+
+### CURRENT TREE (PASS) — exit code below
+OnCall — Architecture Verification (Phase 3.5)
+==========================================================
+Enterprise-layer files scanned: 40
+  domain          10
+  application     13
+  infrastructure  11
+  presentation    6
+----------------------------------------------------------
+  ✔ PASS  R1-no-framework-in-core
+  ✔ PASS  R2-no-sql-outside-infra
+  ✔ PASS  R3-presentation-no-domain
+  ✔ PASS  R3-controller-no-infra-db
+  ✔ PASS  R4-domain-pure
+  ✔ PASS  R5-application-downward-only
+  ✔ PASS  R6-no-cycles
+  ✔ PASS  R7-ports-asserted
+----------------------------------------------------------
+✅ ARCHITECTURE COMPLIANCE: PASS (0 violations)
+exit_code=0
+
+### NEGATIVE PROOF (a CRITICAL violation blocks the gate)
+Injected: a Domain file importing express (R1 breach), then discarded.
+Observed:
+  ✗ FAIL  R1-no-framework-in-core  (1)
+  [CRITICAL] R1-no-framework-in-core — src/domain/__gate_probe__.js: imports a web framework (ADR-005)
+❌ 1 critical, 0 major violation(s)
+exit_code=1  → architecture job fails → build (needs: architecture) is skipped → merge blocked

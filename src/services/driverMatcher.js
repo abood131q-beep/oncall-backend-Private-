@@ -30,7 +30,17 @@ const DRIVER_TIMEOUT = 30000; // 30 ثانية لكل سائق
  * @returns {{ findNearestDriver: Function, sendRequestToDriver: Function }}
  */
 function createDriverMatcher(svc) {
-  const { dbAll, io, tripTimers, getDistanceKm, safeJSON, formatTrip, logger, tripRepo } = svc;
+  const {
+    dbAll,
+    io,
+    tripTimers,
+    getDistanceKm,
+    safeJSON,
+    formatTrip,
+    logger,
+    tripRepo,
+    notifService,
+  } = svc;
 
   /**
    * يبحث عن أقرب سائق متاح.
@@ -45,11 +55,14 @@ function createDriverMatcher(svc) {
         ? `AND d.id NOT IN (${excludeDriverIds.map(() => '?').join(',')})`
         : '';
 
+    // P6-06: approval_status = 'approved' ضروري — يمنع السائقين غير المعتمدين من الظهور في الـ matching
+    // حتى لو تجاوز سائق فحص Socket.IO، يظل محجوباً هنا
     const onlineDrivers = await dbAll(
       `SELECT d.*, t.id as taxi_id, t.lat as taxi_lat, t.lng as taxi_lng, t.status as taxi_status
        FROM drivers d
        JOIN taxis t ON t.driver_id = d.id
-       WHERE d.status = 'online' AND t.status = 'online' ${exclusion}`,
+       WHERE d.status = 'online' AND t.status = 'online'
+         AND d.approval_status = 'approved' ${exclusion}`,
       excludeDriverIds
     );
 
@@ -90,6 +103,21 @@ function createDriverMatcher(svc) {
       io.to('drivers:online').emit('new:trip', formatted);
 
       logger.info(`Request sent to driver: ${driver.name} for trip #${tripId}`);
+
+      // P6-02: Push إلى السائق إذا لم يكن متصلاً بالـ Socket
+      if (notifService?.isConfigured) {
+        const driverRoom = `driver:${driver.phone}`;
+        const driverClients = io.sockets.adapter.rooms.get(driverRoom);
+        const driverOnline = driverClients && driverClients.size > 0;
+        if (!driverOnline) {
+          notifService
+            .send(driver.phone, '🚕 طلب رحلة جديد', 'لديك 30 ثانية للقبول — افتح التطبيق الآن', {
+              tripId: String(tripId),
+              screen: 'driver_trip',
+            })
+            .catch((e) => logger.error('FCM driver push error:', { message: e.message }));
+        }
+      }
 
       // مؤقت انتهاء المهلة — ينتقل للسائق التالي تلقائياً
       const timer = setTimeout(async () => {

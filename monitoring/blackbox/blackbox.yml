@@ -1,0 +1,16 @@
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      method: GET
+      follow_redirects: false
+  https_insecure:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      fail_if_ssl_not_present: true
+      tls_config:
+        insecure_skip_verify: true   # self-signed dev certs; expiry still measured

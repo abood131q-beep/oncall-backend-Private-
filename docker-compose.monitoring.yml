@@ -1,0 +1,217 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# OnCall — Observability overlay (P7-04)
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d
+#
+# All metrics endpoints live on the `internal` network — nothing public.
+# UI access (Grafana :3001, Prometheus :9090) binds to 127.0.0.1 ONLY
+# (reach via SSH tunnel: ssh -L 3001:127.0.0.1:3001 <host>).
+# Centralized logging (Loki+Promtail) is prepared behind `--profile logging`.
+# ═════════════════════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-hardening: &default-hardening
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  prometheus:
+    <<: *default-hardening
+    image: prom/prometheus:v3.4.1
+    container_name: oncall-prometheus
+    user: nobody
+    networks: [internal]
+    ports:
+      - "127.0.0.1:9090:9090"        # loopback only — not public
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    <<: *default-hardening
+    image: grafana/grafana:11.6.1
+    container_name: oncall-grafana
+    user: "472"
+    networks: [internal]
+    ports:
+      - "127.0.0.1:3001:3000"        # loopback only — auth required on top
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on: [prometheus]
+
+  node-exporter:
+    <<: *default-hardening
+    image: prom/node-exporter:v1.9.1
+    container_name: oncall-node-exporter
+    networks: [internal]
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.processes
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+  postgres-exporter:
+    <<: *default-hardening
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: oncall-postgres-exporter
+    networks: [internal]
+    environment:
+      DATA_SOURCE_URI: "postgresql:5432/oncall?sslmode=disable"
+      DATA_SOURCE_USER: oncall
+      DATA_SOURCE_PASS_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+  redis-exporter:
+    <<: *default-hardening
+    image: oliver006/redis_exporter:v1.74.0
+    container_name: oncall-redis-exporter
+    networks: [internal]
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    secrets: [redis_password]
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+  nginx-exporter:
+    <<: *default-hardening
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    container_name: oncall-nginx-exporter
+    networks: [internal]
+    command: ["--nginx.scrape-uri=http://nginx:8081/stub_status"]
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+  blackbox-exporter:
+    <<: *default-hardening
+    image: prom/blackbox-exporter:v0.26.0
+    container_name: oncall-blackbox
+    networks: [internal]
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./monitoring/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+  cadvisor:
+    <<: *default-hardening
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: oncall-cadvisor
+    networks: [internal]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    logging: *default-logging
+
+  # ── Centralized logging (prepared, not required): --profile logging ─────────
+  loki:
+    <<: *default-hardening
+    image: grafana/loki:3.5.0
+    container_name: oncall-loki
+    profiles: [logging]
+    networks: [internal]
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    logging: *default-logging
+
+  promtail:
+    <<: *default-hardening
+    image: grafana/promtail:3.5.0
+    container_name: oncall-promtail
+    profiles: [logging]
+    networks: [internal]
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *default-logging
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+secrets:
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password.txt

@@ -78,7 +78,7 @@ export function registerDriverTools(server: McpServer): void {
     async ({ phone }) => {
       const response = await adminApi<{ success: boolean; driver: Driver }>(
         "get",
-        `/driver/info/${encodeURIComponent(phone)}`
+        `/admin/drivers/${encodeURIComponent(phone)}`
       );
       if (!response.success || !response.driver) {
         return {
@@ -156,7 +156,7 @@ export function registerDriverTools(server: McpServer): void {
       // Fetch current values so we send complete data
       const infoRes = await adminApi<{ success: boolean; driver: Driver }>(
         "get",
-        `/driver/info/${encodeURIComponent(phone)}`
+        `/admin/drivers/${encodeURIComponent(phone)}`
       );
       if (!infoRes.success || !infoRes.driver) {
         return {
@@ -177,6 +177,195 @@ export function registerDriverTools(server: McpServer): void {
       );
       return {
         content: [{ type: "text", text: JSON.stringify(response.driver ?? response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 6. set_driver_status ────────────────────────────────────
+  server.tool(
+    "set_driver_status",
+    "Set a driver online or offline. NOTE: requires a driver JWT token — will fail with admin token (403). Use for testing or when a driver token is available.",
+    {
+      is_online: z.boolean().describe("true = online (accepting trips), false = offline"),
+    },
+    async ({ is_online }) => {
+      const response = await adminApi<{ success: boolean }>(
+        "post",
+        "/driver/status",
+        { isOnline: is_online }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════
+  // P6-06: Driver Approval Workflow Tools
+  // ═══════════════════════════════════════════════════════════════
+
+  // ─── 7. list_pending_drivers ─────────────────────────────────
+  server.tool(
+    "list_pending_drivers",
+    "List all drivers waiting for admin approval (approval_status = 'pending'). Returns phone, name, car info, and registration date for each pending driver.",
+    {},
+    async () => {
+      const response = await adminApi<{
+        success: boolean;
+        count: number;
+        drivers: Driver[];
+      }>("get", "/admin/drivers/pending");
+      return {
+        content: [
+          {
+            type: "text",
+            text: response.count === 0
+              ? "No drivers pending approval."
+              : JSON.stringify(response, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // ─── 8. approve_driver ───────────────────────────────────────
+  server.tool(
+    "approve_driver",
+    "Approve a pending driver, allowing them to log in and accept trips. The action is logged with the admin's phone and timestamp.",
+    {
+      phone: z
+        .string()
+        .min(3)
+        .describe("The driver's phone number to approve"),
+    },
+    async ({ phone }) => {
+      const response = await adminApi<{ success: boolean; driver: Driver }>(
+        "put",
+        `/admin/drivers/${encodeURIComponent(phone)}/approve`,
+        {}
+      );
+      if (!response.success) {
+        return {
+          content: [{ type: "text", text: `Failed to approve driver: ${phone}` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✅ Driver approved: ${phone}\n\n${JSON.stringify(response.driver, null, 2)}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // ─── 9. reject_driver ────────────────────────────────────────
+  server.tool(
+    "reject_driver",
+    "Reject a driver's registration with a mandatory reason. The driver will see the reason when they attempt to log in.",
+    {
+      phone: z
+        .string()
+        .min(3)
+        .describe("The driver's phone number to reject"),
+      reason: z
+        .string()
+        .min(5)
+        .max(500)
+        .describe("Clear reason for rejection (shown to the driver)"),
+    },
+    async ({ phone, reason }) => {
+      const response = await adminApi<{ success: boolean; driver: Driver }>(
+        "put",
+        `/admin/drivers/${encodeURIComponent(phone)}/reject`,
+        { reason }
+      );
+      if (!response.success) {
+        return {
+          content: [{ type: "text", text: `Failed to reject driver: ${phone}` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Driver rejected: ${phone}\nReason: ${reason}\n\n${JSON.stringify(response.driver, null, 2)}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // ─── 10. suspend_driver ──────────────────────────────────────
+  server.tool(
+    "suspend_driver",
+    "Suspend an approved driver with a mandatory reason. Immediately revokes their JWT, forces Socket.IO disconnect, and blocks new logins. The driver sees the reason.",
+    {
+      phone: z
+        .string()
+        .min(3)
+        .describe("The driver's phone number to suspend"),
+      reason: z
+        .string()
+        .min(5)
+        .max(500)
+        .describe("Clear reason for suspension (shown to the driver)"),
+    },
+    async ({ phone, reason }) => {
+      const response = await adminApi<{ success: boolean; driver: Driver }>(
+        "put",
+        `/admin/drivers/${encodeURIComponent(phone)}/suspend`,
+        { reason }
+      );
+      if (!response.success) {
+        return {
+          content: [{ type: "text", text: `Failed to suspend driver: ${phone}` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `⛔ Driver suspended: ${phone}\nReason: ${reason}\nJWT revoked + Socket disconnected.\n\n${JSON.stringify(response.driver, null, 2)}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // ─── 11. reactivate_driver ───────────────────────────────────
+  server.tool(
+    "reactivate_driver",
+    "Reactivate a previously rejected or suspended driver, restoring full access. Cannot be used on pending drivers (use approve_driver instead).",
+    {
+      phone: z
+        .string()
+        .min(3)
+        .describe("The driver's phone number to reactivate"),
+    },
+    async ({ phone }) => {
+      const response = await adminApi<{ success: boolean; driver: Driver }>(
+        "put",
+        `/admin/drivers/${encodeURIComponent(phone)}/reactivate`,
+        {}
+      );
+      if (!response.success) {
+        return {
+          content: [{ type: "text", text: `Failed to reactivate driver: ${phone}` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✅ Driver reactivated: ${phone}\n\n${JSON.stringify(response.driver, null, 2)}`,
+          },
+        ],
       };
     }
   );

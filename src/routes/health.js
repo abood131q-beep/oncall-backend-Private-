@@ -4,32 +4,43 @@ const express = require('express');
 
 module.exports = function createHealthRouter(svc) {
   const router = express.Router();
-  const { cache, tripTimers, dbGet } = svc;
+  const { dbGet } = svc;
 
   router.get('/', (req, res) => res.send('On Call Backend 🚀 (Socket.IO)'));
 
   router.get('/test', (req, res) => res.json({ success: true, message: 'API Works' }));
 
-  // إصلاح M9: اختبار DB حقيقي لمنع false-positive حين تكون قاعدة البيانات تالفة
+  // M-004: /health يُعيد معلومات مبسّطة فقط (بدون PII أو system internals)
+  // البيانات التفصيلية متاحة في /admin/health المحمي بـ authenticateAdmin
+  // P6-03: Enhanced with event loop lag and memory check
   router.get('/health', async (req, res) => {
-    const memUsage = process.memoryUsage();
-    let dbStatus = 'ok';
+    const checks = {};
+
+    // Database check
     try {
       await dbGet('SELECT 1');
+      checks.database = 'ok';
     } catch {
-      dbStatus = 'error';
+      checks.database = 'error';
     }
-    const overallStatus = dbStatus === 'ok' ? 'ok' : 'degraded';
+
+    // Memory check (warn if heap > 90%)
+    const mem = process.memoryUsage();
+    const heapPct = Math.round((mem.heapUsed / mem.heapTotal) * 100);
+    checks.memory = heapPct < 90 ? 'ok' : 'warning';
+
+    // Event loop lag (P6-03)
+    const lagStart = process.hrtime.bigint();
+    await new Promise((r) => setImmediate(r));
+    const lagMs = Number(process.hrtime.bigint() - lagStart) / 1e6;
+    checks.eventLoop = lagMs < 100 ? 'ok' : lagMs < 500 ? 'warning' : 'error';
+
+    const overallStatus = Object.values(checks).includes('error') ? 'degraded' : 'ok';
+
     res.status(overallStatus === 'ok' ? 200 : 503).json({
       status: overallStatus,
-      db: dbStatus,
+      ...checks,
       uptime: Math.round(process.uptime()),
-      memory: {
-        used: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
-        total: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
-      },
-      cache: cache.size,
-      timers: tripTimers.size,
       timestamp: new Date().toISOString(),
     });
   });

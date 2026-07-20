@@ -77,16 +77,18 @@ export function registerUserTools(server: McpServer): void {
         .describe("The user's phone number as stored in the system"),
     },
     async ({ phone }) => {
-      const users = await adminApi<User[]>("get", "/admin/users");
-      const user = users.find((u) => u.phone === phone);
-      if (!user) {
+      const response = await adminApi<{ success: boolean; user?: User }>(
+        "get",
+        `/admin/users/${encodeURIComponent(phone)}`
+      );
+      if (!response.success || !response.user) {
         return {
           content: [{ type: "text", text: `No user found with phone: ${phone}` }],
           isError: true,
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(user, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(response.user, null, 2) }],
       };
     }
   );
@@ -154,7 +156,49 @@ export function registerUserTools(server: McpServer): void {
     }
   );
 
-  // ─── 6. submit_report ────────────────────────────────────────
+  // ─── 6. update_user ──────────────────────────────────────────
+  // Security note: backend reads phone from JWT (req.user.phone), not from body.
+  // This updates the profile of the currently authenticated user only.
+  server.tool(
+    "update_user",
+    "Update the display name of the currently authenticated user. The backend always uses the phone from the JWT token — it is not possible to update another user's name via this endpoint.",
+    {
+      name: z.string().min(1).describe("New display name"),
+    },
+    async ({ name }) => {
+      const response = await adminApi<{ success: boolean; user?: User }>(
+        "post",
+        "/user/update",
+        { name }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 7. get_user_balance ─────────────────────────────────────
+  // Security note: backend enforces IDOR check (req.params.phone === req.user.phone).
+  // Only works when phone matches the JWT token's phone (i.e., admin's own phone).
+  // To get any user's balance as admin, use get_user_by_phone instead (uses /admin/users).
+  server.tool(
+    "get_user_balance",
+    "Get the wallet balance for a phone number. IMPORTANT: the backend enforces an ownership check — only returns balance for the same phone as the JWT token. To check any user's balance as admin, use get_user_by_phone which queries the admin endpoint.",
+    {
+      phone: z.string().min(3).describe("Phone number (must match the authenticated user's token)"),
+    },
+    async ({ phone }) => {
+      const response = await adminApi<{ success: boolean; balance: number }>(
+        "get",
+        `/balance/${encodeURIComponent(phone)}`
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+      };
+    }
+  );
+
+  // ─── 8. submit_report ────────────────────────────────────────
   server.tool(
     "submit_report",
     "Submit a report or complaint on behalf of a user (e.g., driver behaviour, scooter damage). Type can be 'general', 'driver', 'scooter', or 'trip'.",

@@ -1,0 +1,202 @@
+{
+ "uid": "oncall-system",
+ "title": "OnCall \u2014 System (Node)",
+ "tags": [
+  "oncall",
+  "system"
+ ],
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": true,
+ "timezone": "browser",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "refresh": "30s",
+ "panels": [
+  {
+   "title": "CPU %",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))*100)",
+     "refId": "A",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "title": "Memory",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
+     "refId": "A",
+     "legendFormat": "used"
+    },
+    {
+     "expr": "node_memory_MemTotal_bytes",
+     "refId": "B",
+     "legendFormat": "total"
+    }
+   ]
+  },
+  {
+   "title": "Disk free %",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "(node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"}/node_filesystem_size_bytes{fstype!~\"tmpfs|overlay\"})*100",
+     "refId": "A",
+     "legendFormat": "{{mountpoint}}"
+    }
+   ]
+  },
+  {
+   "title": "Load (1/5/15m)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "node_load1",
+     "refId": "A",
+     "legendFormat": "1m"
+    },
+    {
+     "expr": "node_load5",
+     "refId": "B",
+     "legendFormat": "5m"
+    },
+    {
+     "expr": "node_load15",
+     "refId": "C",
+     "legendFormat": "15m"
+    }
+   ]
+  },
+  {
+   "title": "Network I/O",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "Bps"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[5m])",
+     "refId": "A",
+     "legendFormat": "rx {{device}}"
+    },
+    {
+     "expr": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m])",
+     "refId": "B",
+     "legendFormat": "tx {{device}}"
+    }
+   ]
+  },
+  {
+   "title": "Processes",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "node_procs_running",
+     "refId": "A",
+     "legendFormat": "running"
+    },
+    {
+     "expr": "node_procs_blocked",
+     "refId": "B",
+     "legendFormat": "blocked"
+    }
+   ]
+  }
+ ]
+}

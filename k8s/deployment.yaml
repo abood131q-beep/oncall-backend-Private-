@@ -1,0 +1,93 @@
+# OnCall backend — Kubernetes Deployment (Phase 12: C8)
+# Multi-replica, rolling updates, non-root, liveness/readiness probes wired to the
+# Phase-12 observability endpoints. Horizontal scaling is CORRECT only when the
+# state backends are externalized: set DB_ENGINE=postgres + REDIS_URL (Phase-12
+# seams). With the SQLite default this must run replicas: 1 (documented below).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall-backend
+  labels: { app: oncall-backend }
+spec:
+  # NOTE: >1 replica REQUIRES DB_ENGINE=postgres + REDIS_URL (state externalized).
+  # With the SQLite default, keep this at 1 (single-writer embedded DB).
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } # zero-downtime rollout
+  selector:
+    matchLabels: { app: oncall-backend }
+  template:
+    metadata:
+      labels: { app: oncall-backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: oncall-backend
+          image: oncall-backend:latest
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            - { name: NODE_ENV, value: "production" }
+            - { name: DB_ENGINE, value: "postgres" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: oncall-secrets, key: database-url } }
+            - name: REDIS_URL
+              valueFrom: { secretKeyRef: { name: oncall-secrets, key: redis-url } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: oncall-secrets, key: jwt-secret } }
+            - name: METRICS_TOKEN
+              valueFrom: { secretKeyRef: { name: oncall-secrets, key: metrics-token } }
+            - { name: SOCKET_CORS_ORIGIN, value: "https://dashboard.oncall.example" }
+            - { name: PAYMENT_ENABLED, value: "true" }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oncall-backend
+  labels: { app: oncall-backend }
+spec:
+  selector: { app: oncall-backend }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+  # Socket.IO needs sticky sessions at the ingress OR the Redis adapter (Phase 12
+  # C3) so cross-node fan-out works; with the Redis adapter, stickiness is optional.
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: oncall-backend
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: oncall-backend }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+    - type: Resource
+      resource: { name: memory, target: { type: Utilization, averageUtilization: 75 } }

@@ -7,6 +7,8 @@ import { registerTripTools } from "./trips.js";
 import { registerAdminTools } from "./admin.js";
 import { registerPaymentTools } from "./payments.js";
 import { registerEngineeringTools } from "./engineering.js";
+import { registerPlacesTools } from "./places.js";
+import { registerAuthTools } from "./auth.js";
 
 export function registerAllTools(server: McpServer): void {
   registerUserTools(server);
@@ -17,4 +19,6 @@ export function registerAllTools(server: McpServer): void {
   registerAdminTools(server);
   registerPaymentTools(server);
   registerEngineeringTools(server);
+  registerPlacesTools(server);
+  registerAuthTools(server);
 }

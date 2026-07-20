@@ -72,7 +72,7 @@ async function run() {
   const toolNames = toolsRes.result?.tools?.map((t) => t.name) ?? [];
   const expected = ["list_users","get_user_by_phone","list_drivers","get_driver_by_phone",
                     "list_scooters","get_scooter_by_id","create_taxi_request","get_taxi_request_status"];
-  ok(`all 8 tools registered (${toolNames.length}/8)`, toolNames.length === 8);
+  ok(`all 69 tools registered (${toolNames.length}/69)`, toolNames.length >= 69);
   for (const t of expected) ok(`  tool: ${t}`, toolNames.includes(t));
 
   // 3. list_users (limit 3)

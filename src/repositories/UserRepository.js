@@ -39,13 +39,13 @@ function createUserRepository({ dbGet, dbAll, dbRun }) {
     },
 
     /**
-     * ينشئ مستخدماً جديداً مع رصيد ابتدائي 10 KD.
+     * ينشئ مستخدماً جديداً مع رصيد ابتدائي 0 KD (P6-04A).
      * @param {string} phone
      * @param {string} [name='راكب']
      * @returns {Promise<object>} المستخدم الجديد
      */
     async create(phone, name) {
-      const result = await dbRun('INSERT INTO users (phone, name, balance) VALUES (?, ?, 10)', [
+      const result = await dbRun('INSERT INTO users (phone, name, balance) VALUES (?, ?, 0)', [
         phone,
         name || 'راكب',
       ]);
