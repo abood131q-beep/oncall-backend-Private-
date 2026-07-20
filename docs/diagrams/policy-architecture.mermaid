@@ -1,0 +1,39 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph POL["Policy Kernel Service — ADR-025"]
+    SERVICE["policyService\nregister/evaluate/explain\nenable/disable/list/health"]
+    CACHE["decision cache\n(generation-invalidated)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped policy() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    COND["condition (language)"]
+    POLICY["policy (value object + checksum)"]
+    DEC["decision engine\n(default-deny · conflict resolution)"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (definition store)"]
+    MEM["memory"]
+    FUT["extension points:\nopa · cedar · casbin · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+
+  SVC --> SERVICE
+  EXT -->|this.policy| ADAPTER --> SERVICE
+  SERVICE --> CACHE
+  SERVICE --> METRICS
+  SERVICE -->|create/validate| POLICY
+  POLICY -->|conditions| COND
+  SERVICE -->|evaluate| DEC
+  DEC -->|match| COND
+  SERVICE -->|publish lifecycle| EVT --> BACKBONE
+  SERVICE -->|store/list definitions| Providers
+  note1["providers store definitions only;\nevaluation stays in the engine"]
+  Providers -.-> note1

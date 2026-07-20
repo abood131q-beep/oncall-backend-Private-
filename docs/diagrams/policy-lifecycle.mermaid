@@ -1,0 +1,14 @@
+stateDiagram-v2
+  [*] --> Enabled: register() → PolicyRegistered
+  Enabled --> Enabled: register() same id → PolicyUpdated (checksum recomputed)
+  Enabled --> Disabled: disable() → PolicyDisabled
+  Disabled --> Enabled: enable() → PolicyEnabled
+  Enabled --> [*]: (definition retained in provider)
+
+  note right of Enabled
+    Only ENABLED policies whose scope matches participate in evaluation.
+    Any register/enable/disable bumps the engine generation, invalidating
+    the decision cache. Each policy carries an integrity checksum that
+    verify() recomputes and compares. Evaluation itself never mutates a
+    policy — it emits PolicyEvaluated (and PolicyRejected on deny).
+  end note

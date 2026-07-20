@@ -1,0 +1,24 @@
+flowchart TD
+  REQ["evaluate({ namespace, scope, ...context })"] --> CACHE{decision cached?}
+  CACHE -->|hit| RET["return cached decision"]
+  CACHE -->|miss| FILTER["filter: enabled + scope matches (== or *)"]
+  FILTER --> ORDER["order by priority DESC, policyId ASC"]
+  ORDER --> LOOP["for each policy: evaluate condition"]
+  LOOP --> APPLIC{applicable?}
+  APPLIC -->|condition throws| SAFE["fail-safe: not applicable\n(error captured in trace)"]
+  APPLIC -->|no| LOOP
+  SAFE --> LOOP
+  APPLIC -->|yes| STRAT{strategy}
+  STRAT -->|first-applicable / priority| DECIDE["that policy's effect decides"]
+  STRAT -->|deny-overrides| DENYFIRST{any applicable deny?}
+  STRAT -->|allow-overrides| ALLOWFIRST{any applicable allow?}
+  DENYFIRST -->|yes| DENY["decision = deny (short-circuit)"]
+  DENYFIRST -->|no, but allow seen| ALLOW["decision = allow"]
+  ALLOWFIRST -->|yes| ALLOW
+  ALLOWFIRST -->|no, but deny seen| DENY
+  LOOP -->|no applicable policy| DEFAULT["default-deny"]
+  DECIDE --> EMIT
+  DENY --> EMIT
+  ALLOW --> EMIT
+  DEFAULT --> EMIT["record metrics + emit PolicyEvaluated\n(+ PolicyRejected if denied)"]
+  EMIT --> STORE["cache result"] --> RET
