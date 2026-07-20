@@ -4,21 +4,26 @@
   "description": "OnCall ride-sharing & scooter backend — Kuwait",
   "main": "server.js",
   "scripts": {
-    "start":        "node server.js",
-    "dev":          "node --watch server.js",
-    "test":         "bash run_tests.sh",
-    "test:unit":    "node --test tests/unit/*.test.js",
-    "test:ab":      "node scripts/run-ab.mjs",
-    "test:coverage":"node --experimental-test-coverage --test tests/unit/*.test.js",
-    "migrate":      "node scripts/migrate.js",
-    "verify:pg":    "bash scripts/verify-postgres.sh",
-    "lint":         "eslint 'src/**/*.js' server.js database.js --max-warnings 0",
-    "lint:fix":     "eslint 'src/**/*.js' server.js database.js --fix",
-    "format":       "prettier --write 'src/**/*.js' server.js database.js",
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "bash run_tests.sh",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:ab": "node scripts/run-ab.mjs",
+    "test:coverage": "node --experimental-test-coverage --test tests/unit/*.test.js",
+    "migrate": "node scripts/migrate.js",
+    "verify:pg": "bash scripts/verify-postgres.sh",
+    "lint": "eslint 'src/**/*.js' server.js database.js --max-warnings 0",
+    "lint:fix": "eslint 'src/**/*.js' server.js database.js --fix",
+    "format": "prettier --write 'src/**/*.js' server.js database.js",
     "format:check": "prettier --check 'src/**/*.js' server.js database.js",
-    "ci":           "npm run lint && npm run format:check && npm run test:unit && npm run test:ab"
+    "ci": "npm run lint && npm run format:check && npm run test:unit && npm run test:ab"
   },
-  "keywords": ["oncall", "ride-sharing", "kuwait", "backend"],
+  "keywords": [
+    "oncall",
+    "ride-sharing",
+    "kuwait",
+    "backend"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -37,7 +42,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "helmet": "^8.2.0",
-    "pg": "^8.13.0",
+    "pg": "^8.22.0",
     "socket.io": "^4.8.3",
     "sqlite3": "^6.0.1"
   }
