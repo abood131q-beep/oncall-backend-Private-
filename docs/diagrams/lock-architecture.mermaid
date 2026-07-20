@@ -1,0 +1,33 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph Platform["Lock Kernel Service — Phase 14.3.5"]
+    SERVICE["lockService\nacquire/tryAcquire/renew\nrelease/isHeld/owner/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nowner-scoped lock() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    LOCK["lock (aggregate + lifecycle)"]
+    ERR["errors"]
+    EVENTS["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (port)"]
+    MEM["memory (single-process)"]
+    FUT["extension points:\nredis·postgres-advisory·mysql·zookeeper·etcd·consul"]
+  end
+
+  PORT["EventPublisher port (ADR-016)"]
+
+  SVC --> SERVICE
+  EXT -->|this.lock| ADAPTER --> SERVICE
+  SERVICE --> METRICS
+  SERVICE -->|lifecycle transitions| LOCK
+  SERVICE -->|publish| EVENTS --> PORT
+  SERVICE -->|read/write/scan| Providers
+  note1["mutations serialized (mutex):\nread-check-write is atomic"]
+  SERVICE -.-> note1

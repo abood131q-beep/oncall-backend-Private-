@@ -1,0 +1,19 @@
+stateDiagram-v2
+  [*] --> Available
+  Available --> Acquired: acquire()/tryAcquire() (owner set, lease = now + leaseMs → LockAcquired)
+  Acquired --> Renewing: renew() by owner
+  Renewing --> Acquired: lease extended (→ LockRenewed)
+  Acquired --> Released: release() by owner (→ LockReleased)
+  Acquired --> Expired: now ≥ expiresAt, settled on next access (→ LockExpired)
+  Renewing --> Expired: lapsed before renew committed
+  Released --> Acquired: re-acquired (any owner)
+  Expired --> Acquired: re-acquired (any owner)
+  Acquired --> Failed: provider write failure (state preserved; op rejected)
+  Failed --> Acquired: recovered on a successful acquire
+
+  note right of Acquired
+    A conflicting acquire by a different owner while
+    a lease is live → LockConflict (tryAcquire → null,
+    acquire → LockConflictError). Same-owner re-acquire
+    is reentrant and refreshes the lease.
+  end note
