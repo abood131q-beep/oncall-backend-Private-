@@ -15,6 +15,7 @@ function createIdentityMetrics(opts = {}) {
   let authFailures = 0;
   let refreshes = 0;
   let revocations = 0;
+  let expiredSessions = 0;
   let providerFailures = 0;
   let eventFailures = 0;
   let latTotalMs = 0;
@@ -31,6 +32,7 @@ function createIdentityMetrics(opts = {}) {
   const recordAuthFailure = () => (authFailures += 1);
   const recordRefresh = () => (refreshes += 1);
   const recordRevocation = () => (revocations += 1);
+  const recordExpired = () => (expiredSessions += 1);
   const recordProviderFailure = () => (providerFailures += 1);
   const recordEventFailure = () => (eventFailures += 1);
   function recordLatency(ms) {
@@ -49,6 +51,7 @@ function createIdentityMetrics(opts = {}) {
       authFailures,
       refreshes,
       revocations,
+      expiredSessions,
       providerFailures,
       eventFailures,
       avgLatencyMs: latCount ? latTotalMs / latCount : 0,
@@ -69,6 +72,7 @@ function createIdentityMetrics(opts = {}) {
         g('identity_auth_failures_total', 'Authentication failures', s.authFailures),
         g('identity_refreshes_total', 'Session refreshes', s.refreshes),
         g('identity_revocations_total', 'Session revocations', s.revocations),
+        g('identity_expired_sessions_total', 'Expired sessions', s.expiredSessions),
         g('identity_provider_failures_total', 'Provider failures', s.providerFailures),
         g('identity_event_failures_total', 'Event publication failures', s.eventFailures),
         g('identity_latency_ms_avg', 'Average operation latency', s.avgLatencyMs),
@@ -85,6 +89,7 @@ function createIdentityMetrics(opts = {}) {
     recordAuthFailure,
     recordRefresh,
     recordRevocation,
+    recordExpired,
     recordProviderFailure,
     recordEventFailure,
     recordLatency,

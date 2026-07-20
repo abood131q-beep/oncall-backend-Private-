@@ -33,6 +33,7 @@ function createIdentityPlatform(deps = {}) {
     idFactory: deps.idFactory,
     tokenFactory: deps.tokenFactory,
     sessionTtlMs: deps.sessionTtlMs,
+    historyLimit: deps.historyLimit,
   });
   return { identity, provider, metrics, IDENTITY_EVENTS };
 }

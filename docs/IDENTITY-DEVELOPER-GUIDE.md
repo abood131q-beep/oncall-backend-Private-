@@ -102,6 +102,22 @@ Credentials are stored only as salted sha256 hashes; the raw secret never persis
 the model, and the public model omits even the hash. Sessions are token-validated and
 lease-bounded. Namespace isolation and capability gates are enforced at the SDK boundary.
 
+## 8a. Production hardening (added in the completion pass)
+
+```js
+await I.snapshotIdentity(namespace, identityId); // deep-frozen, NO credential hash
+await I.snapshotSession(namespace, sessionId); // deep-frozen session
+I.verifyStartup(); // { ok, problems }
+await I.verifyProvider(namespace); // namespace consistency (identities + sessions)
+await I.verifyCredentialIntegrity(namespace); // well-formed credential hashes
+await I.reconcileSessions({ namespace, now }); // settle expired sessions (stale cleanup)
+await I.recover({ namespace, now }); // rebuild the active-session set after a restart
+I.diagnostics(namespace); // identities/active/namespaces/startup/metrics
+I.history(); // bounded lifecycle log
+```
+
+New metric: `identity_expired_sessions_total`. Extra optional dep: `historyLimit`.
+
 ## Out of scope (future work behind the provider port)
 
 Real protocol integrations (OAuth2/OIDC/LDAP/SAML/Firebase/Cognito/Auth0), MFA, and token

@@ -84,3 +84,27 @@ identity events. It imports no implementation classes.
 Delete `src/domain/identity-kernel/`, `src/application/identity-kernel/`, and
 `tests/unit/identity-kernel.test.js`. Nothing imports them at runtime, so removal is inert and
 every prior kernel (and the app's identity context) is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Immutable snapshots** — `snapshotIdentity(namespace, id)` (deep-frozen, **no credential
+  hash**) and `snapshotSession(namespace, sessionId)`.
+- **Startup verification** — `verifyStartup()` checks provider + clock wiring.
+- **Provider / namespace-consistency verification** — `verifyProvider(namespace)`: every
+  indexed identity is resolvable by id and by principal, and every session references an
+  existing identity.
+- **Credential-integrity verification** — `verifyCredentialIntegrity(namespace)`: every stored
+  credential hash is well-formed (64-hex) or null.
+- **Session reconciliation / stale cleanup** — `reconcileSessions({ namespace, now })` settles
+  expired-but-active sessions and drops them from the active set.
+- **Recovery after provider failure/restart** — `recover({ namespace, now })` rebuilds the
+  in-memory active-session set from the provider (source of truth).
+- **Lifecycle history** — a bounded ring via `history()` (`historyLimit`, default 500), fed by
+  a per-namespace identity index used for the verification scans.
+- **Structured diagnostics** — `diagnostics(namespace)`.
+- **Metrics** — added `identity_expired_sessions_total`.
+
+New optional dep: `historyLimit`. Tests: `tests/unit/identity-kernel-hardening.test.js`.

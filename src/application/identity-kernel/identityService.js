@@ -43,6 +43,27 @@ function createIdentityService(deps = {}) {
   const _active = new Set(); // sessionIds believed active (gauge source)
   if (metrics && metrics.bindGauges) metrics.bindGauges({ activeSessions: () => _active.size });
 
+  // Production hardening (A-001) — all additive.
+  const historyLimit = deps.historyLimit || 500;
+  const _lifecycle = []; // ring: { type, namespace, at }
+  const _idIndex = new Map(); // namespace -> Set(identityId) — enables verification scans
+  const _CREDENTIAL_HASH_RE = /^[a-f0-9]{64}$/;
+  function _recordLifecycle(type, namespace) {
+    _lifecycle.push({ type, namespace, at: clock() });
+    if (_lifecycle.length > historyLimit) _lifecycle.shift();
+  }
+  function _indexIdentity(namespace, identityId) {
+    if (!_idIndex.has(namespace)) _idIndex.set(namespace, new Set());
+    _idIndex.get(namespace).add(identityId);
+  }
+  function _deepFreeze(o) {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+      for (const k of Object.keys(o)) _deepFreeze(o[k]);
+      Object.freeze(o);
+    }
+    return o;
+  }
+
   function _emit(type, payload) {
     try {
       const event = createIdentityEvent(type, payload, { clock: () => new Date(clock()) });
@@ -87,7 +108,9 @@ function createIdentityService(deps = {}) {
       }
       const identity = createIdentity(spec, { idFactory: idOpts.idFactory });
       await _safe(() => provider.putIdentity(namespace, identity.toModel()));
+      _indexIdentity(namespace, identity.identityId);
       if (metrics) metrics.recordIdentity();
+      _recordLifecycle('registered', namespace);
       _emit(IDENTITY_EVENTS.REGISTERED, {
         identityId: identity.identityId,
         namespace,
@@ -124,6 +147,7 @@ function createIdentityService(deps = {}) {
       );
       await _safe(() => provider.putSession(namespace, session.toModel()));
       _active.add(session.sessionId);
+      _recordLifecycle('authenticated', namespace);
       _emit(IDENTITY_EVENTS.AUTHENTICATED, {
         namespace,
         identityId: identity.identityId,
@@ -149,7 +173,10 @@ function createIdentityService(deps = {}) {
       const model = await _safe(() => provider.getSession(namespace, sessionId));
       if (!model) throw new SessionError(`identity: session "${sessionId}" not found`);
       const session = sessionFromModel(model);
-      session.settleExpiry(clock());
+      if (session.settleExpiry(clock())) {
+        if (metrics && metrics.recordExpired) metrics.recordExpired();
+        await _safe(() => provider.putSession(namespace, session.toModel()));
+      }
       if (!session.isLive(clock())) {
         _active.delete(sessionId);
         throw new SessionError(`identity: session "${sessionId}" is ${session.state}`);
@@ -182,6 +209,7 @@ function createIdentityService(deps = {}) {
       await _safe(() => provider.putSession(namespace, session.toModel()));
       _active.delete(sessionId);
       if (metrics) metrics.recordRevocation();
+      _recordLifecycle('revoked', namespace);
       _emit(IDENTITY_EVENTS.SESSION_REVOKED, { namespace, sessionId });
       return true;
     });
@@ -223,6 +251,136 @@ function createIdentityService(deps = {}) {
     };
   }
 
+  // ── production hardening: snapshots, verification, reconciliation, diag ──────
+
+  /** Immutable, deep-frozen public snapshot of an identity (no credential hash). */
+  async function snapshotIdentity(namespace, identityId) {
+    const m = await _safe(() => provider.getIdentity(namespace, identityId));
+    if (!m) return null;
+    const pub = m;
+    delete pub.credentialHash; // never expose the hash in a snapshot
+    return _deepFreeze(pub);
+  }
+
+  /** Immutable, deep-frozen snapshot of a session. */
+  async function snapshotSession(namespace, sessionId) {
+    const m = await _safe(() => provider.getSession(namespace, sessionId));
+    return m ? _deepFreeze(m) : null;
+  }
+
+  /** Startup verification: sane wiring before the engine is trusted. */
+  function verifyStartup() {
+    const problems = [];
+    if (!provider) problems.push('identity provider is required');
+    if (typeof clock !== 'function' || typeof clock() !== 'number') {
+      problems.push('clock must return a numeric ms epoch');
+    }
+    return { ok: problems.length === 0, problems };
+  }
+
+  /**
+   * Provider / namespace-consistency verification: every indexed identity must be
+   * resolvable by id AND by principal (matching id), and every session must
+   * reference an existing identity in the namespace.
+   */
+  async function verifyProvider(namespace = 'default') {
+    const issues = [];
+    const ids = _idIndex.get(namespace) || new Set();
+    for (const identityId of ids) {
+      const byId = await _safe(() => provider.getIdentity(namespace, identityId));
+      if (!byId) {
+        issues.push({ identityId, reason: 'missing in provider' });
+        continue;
+      }
+      const byPrincipal = await _safe(() =>
+        provider.getIdentityByPrincipal(namespace, byId.principal)
+      );
+      if (!byPrincipal || byPrincipal.identityId !== identityId) {
+        issues.push({ identityId, reason: 'principal index inconsistent' });
+      }
+    }
+    const sessions = await _safe(() => provider.listSessions(namespace));
+    for (const s of sessions) {
+      const owner = await _safe(() => provider.getIdentity(namespace, s.identityId));
+      if (!owner)
+        issues.push({ sessionId: s.sessionId, reason: 'session references unknown identity' });
+    }
+    return { ok: issues.length === 0, issues };
+  }
+
+  /** Credential-integrity verification: every stored credentialHash is well-formed. */
+  async function verifyCredentialIntegrity(namespace = 'default') {
+    const issues = [];
+    const ids = _idIndex.get(namespace) || new Set();
+    for (const identityId of ids) {
+      const m = await _safe(() => provider.getIdentity(namespace, identityId));
+      if (m && m.credentialHash != null && !_CREDENTIAL_HASH_RE.test(m.credentialHash)) {
+        issues.push({ identityId, reason: 'malformed credential hash' });
+      }
+    }
+    return { ok: issues.length === 0, issues };
+  }
+
+  /**
+   * Session reconciliation / stale cleanup: settle every expired-but-active
+   * session (persist the expired state, drop from the active set). Deterministic.
+   */
+  async function reconcileSessions(opts2 = {}) {
+    const namespace = opts2.namespace || 'default';
+    const now = typeof opts2.now === 'number' ? opts2.now : clock();
+    const sessions = await _safe(() => provider.listSessions(namespace));
+    let expired = 0;
+    let active = 0;
+    for (const model of sessions) {
+      const session = sessionFromModel(model);
+      if (session.settleExpiry(now)) {
+        expired += 1;
+        _active.delete(session.sessionId);
+        if (metrics && metrics.recordExpired) metrics.recordExpired();
+        await _safe(() => provider.putSession(namespace, session.toModel()));
+      } else if (session.isLive(now)) {
+        active += 1;
+      }
+    }
+    return { expired, active };
+  }
+
+  /**
+   * Recovery after a provider failure/restart: rebuild the in-memory active-session
+   * set from the provider (source of truth), so the gauge and cleanup stay correct.
+   */
+  async function recover(opts2 = {}) {
+    const namespace = opts2.namespace || 'default';
+    const now = typeof opts2.now === 'number' ? opts2.now : clock();
+    const sessions = await _safe(() => provider.listSessions(namespace));
+    let recovered = 0;
+    for (const model of sessions) {
+      const session = sessionFromModel(model);
+      if (session.isLive(now)) {
+        _active.add(session.sessionId);
+        recovered += 1;
+      } else {
+        _active.delete(session.sessionId);
+      }
+    }
+    _recordLifecycle('recovered', namespace);
+    return { ok: true, recovered, active: _active.size };
+  }
+
+  /** Structured diagnostics for dashboards / health checks. */
+  function diagnostics(namespace = 'default') {
+    return {
+      identities: (_idIndex.get(namespace) || new Set()).size,
+      activeSessions: _active.size,
+      namespaces: _idIndex.size,
+      lifecycleDepth: _lifecycle.length,
+      startup: verifyStartup(),
+      metrics: metrics ? metrics.snapshot() : null,
+    };
+  }
+
+  const history = () => _lifecycle.map((h) => ({ ...h }));
+
   return {
     register,
     authenticate,
@@ -230,6 +388,16 @@ function createIdentityService(deps = {}) {
     revoke,
     resolve,
     health,
+    // production hardening (additive)
+    snapshotIdentity,
+    snapshotSession,
+    verifyStartup,
+    verifyProvider,
+    verifyCredentialIntegrity,
+    reconcileSessions,
+    recover,
+    diagnostics,
+    history,
     metrics: () => (metrics ? metrics.snapshot() : null),
   };
 }
