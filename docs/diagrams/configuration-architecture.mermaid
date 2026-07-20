@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    EXT["Extensions (SDK · ADR-018)"]
+    SVC["Platform Services"]
+    MOD["Mobility Modules"]
+  end
+
+  subgraph Platform["Configuration Platform (Kernel Service) — Phase 14.3.2"]
+    SERVICE["configService\nget/require/exists/list/watch\nreload/validate/snapshot/version"]
+    CACHE["cache\nlazy · version · invalidation"]
+    METRICS["metrics\nPrometheus"]
+    ADAPTER["sdkAdapter\nread:config port / configProvider"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    PREC["precedence\nruntime→tenant→org→env→provider→file→default"]
+    SCHEMA["schema\nvalidation engine"]
+    REDACT["redaction\nsecret masking"]
+    EVENTS["events\nconfig event catalog"]
+  end
+
+  subgraph Providers["Provider adapters (port)"]
+    ENV["env"]
+    FILE["jsonFile"]
+    MEM["memory"]
+    FUT["extension points:\nredis·postgres·consul·etcd·vault·aws·azure·google"]
+  end
+
+  PORT["EventPublisher port (ADR-016)"]
+
+  EXT -->|this.config| ADAPTER
+  SVC --> SERVICE
+  MOD --> SERVICE
+  ADAPTER --> SERVICE
+  SERVICE --> CACHE
+  SERVICE --> METRICS
+  SERVICE -->|resolve| PREC
+  SERVICE -->|validate| SCHEMA
+  SERVICE -->|redact| REDACT
+  SERVICE -->|publish lifecycle| EVENTS --> PORT
+  SERVICE -->|load| Providers
+  ENV -. environment .-> PREC
+  FILE -. file .-> PREC
+  MEM -. provider .-> PREC

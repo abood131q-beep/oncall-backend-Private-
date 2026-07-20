@@ -1,0 +1,36 @@
+sequenceDiagram
+  autonumber
+  participant C as Consumer
+  participant S as configService
+  participant P as Providers
+  participant D as Domain (precedence+schema)
+  participant K as Cache
+  participant E as EventPublisher port
+  participant W as Watchers
+
+  Note over C,S: init() / reload()
+  C->>S: reload()
+  S->>P: load() (each provider, timed)
+  P-->>S: { key: value } bags
+  S->>D: precedence.resolve(layers)
+  D-->>S: { values, origins }
+  S->>D: schema.validate(values)
+  alt valid
+    D-->>S: { ok:true, normalized }
+    S->>S: diff(previous, effective)
+    S->>K: cache.set(snapshot, version+1)
+    S->>W: notify changed keys (old,new,ts,version,origin)
+    S->>E: publish ConfigurationChanged (redacted) + ConfigurationReloaded
+    S-->>C: { ok:true, version, changed }
+  else invalid
+    D-->>S: { ok:false, errors }
+    S->>E: publish ConfigurationValidationFailed
+    S->>E: publish ConfigurationRollback (keep previous)
+    S-->>C: { ok:false, rolledBack:true, errors }
+  end
+
+  Note over C,S: read path (synchronous)
+  C->>S: get(key)
+  S->>K: read cached snapshot
+  K-->>S: value
+  S-->>C: value (raw); snapshot()/logs redacted

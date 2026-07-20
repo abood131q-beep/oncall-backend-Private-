@@ -1,0 +1,20 @@
+stateDiagram-v2
+  [*] --> Composed: createConfigurationPlatform(deps)
+  Composed --> Loading: init()
+
+  Loading --> Validating: providers loaded + precedence resolved
+  Validating --> Active: schema valid (version = 1)
+  Validating --> InitFailed: invalid initial config
+  InitFailed --> [*]: init() throws (cannot activate)
+
+  Active --> Reloading: reload() / provider push / setOverride
+  Reloading --> Diffing: providers loaded + resolved + validated
+  Diffing --> Active: no change (version stable)
+  Diffing --> Changed: keys changed (version + 1)
+  Changed --> Active: cache set · watchers notified · events published
+
+  Reloading --> RollingBack: new config invalid
+  RollingBack --> Active: keep previous snapshot\nValidationFailed + Rollback events
+
+  Active --> Disposed: dispose()
+  Disposed --> [*]
