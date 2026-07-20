@@ -1,0 +1,21 @@
+stateDiagram-v2
+  [*] --> Registered: register() → IdentityRegistered (credential stored as salted hash)
+  Registered --> Authenticated: authenticate() ok → Authenticated + SessionCreated
+  Registered --> Rejected: authenticate() bad creds → AuthenticationFailed
+  Rejected --> Registered: retry with correct credentials
+  Authenticated --> Refreshed: refresh() (token-validated) → SessionRefreshed
+  Refreshed --> Refreshed: refresh() again (extends lease)
+  Authenticated --> Expired: now ≥ expiresAt (settled on access)
+  Refreshed --> Expired: lease elapsed
+  Authenticated --> Revoked: revoke() → SessionRevoked
+  Refreshed --> Revoked: revoke()
+  Expired --> Authenticated: re-authenticate → new session
+  Revoked --> Authenticated: re-authenticate → new session
+
+  note right of Authenticated
+    resolve({ sessionId }) → { ok: isLive, context }
+    resolve({ principal }) → context only (authenticated:false)
+    The frozen authorization context (roles/permissions/claims/tenant)
+    is what the Policy engine (ADR-025) evaluates. Tokens/credentials
+    never appear in events, the SDK, or API responses.
+  end note

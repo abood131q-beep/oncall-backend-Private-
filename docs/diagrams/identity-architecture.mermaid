@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph IDK["Identity Kernel Service — ADR-027"]
+    SERVICE["identityService\nregister/authenticate/refresh\nrevoke/resolve/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped identity() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    ID["identity (salted credential hash)"]
+    SESS["session (lease + token + state)"]
+    PRIN["principal (authorization context)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (persistence / protocol)"]
+    MEM["memory"]
+    FUT["extension points:\noauth2 · oidc · ldap · saml · firebase · cognito · auth0 · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  POLICY["Policy Engine (ADR-025)\nconsumes authorization context"]
+
+  SVC --> SERVICE
+  EXT -->|this.identity| ADAPTER --> SERVICE
+  SERVICE --> METRICS
+  SERVICE -->|create/verify| ID
+  SERVICE -->|manage| SESS
+  SERVICE -->|resolve| PRIN --> POLICY
+  SERVICE -->|publish lifecycle| EVT --> BACKBONE
+  SERVICE -->|persist identities/sessions| Providers
+  note1["credentials stored as salted hash only;\nnever in events/SDK/API"]
+  ID -.-> note1
