@@ -74,3 +74,26 @@ Storage/etc. for policy sourcing and durability. It imports no implementation cl
 
 Delete `src/domain/policy/`, `src/application/policy/`, and `tests/unit/policy.test.js`.
 Nothing imports them at runtime, so removal is inert and every prior kernel is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Immutable snapshots** — `snapshot(namespace, policyId)` returns a deep-frozen policy model.
+- **Startup verification** — `verifyStartup()` checks provider + clock wiring.
+- **Provider verification / checksum reconciliation** — `verifyProvider(namespace)` compares
+  the in-memory (authoritative) entities against the provider's stored definitions and
+  reports drift, missing, corrupt (no-checksum), and orphan records (namespace-consistency).
+- **Decision-cache verification** — `verifyCache()` re-evaluates each cached key fresh and
+  reports any stale entry.
+- **Provider-failure recovery** — `recover(namespace?)` re-persists in-memory entities to the
+  provider after a write failure, reconciling drift.
+- **Lifecycle + evaluation history** — bounded ring buffers via `history()` and
+  `evaluationHistory()` (`historyLimit`, default 500).
+- **Structured diagnostics** — `diagnostics()` (policies, enabled/disabled, namespaces,
+  generation, cache size, startup, metrics).
+- **Expanded metrics** — enabled/disabled gauges, provider failures, integrity failures,
+  event-publication failures, engine uptime (with Prometheus lines).
+
+New optional dep: `historyLimit`. Tests: `tests/unit/policy-hardening.test.js`.

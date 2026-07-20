@@ -31,6 +31,7 @@ function createPolicyPlatform(deps = {}) {
     strategy: deps.strategy,
     cache: deps.cache,
     idFactory: deps.idFactory,
+    historyLimit: deps.historyLimit,
   });
   return { policy, provider, metrics, POLICY_EVENTS };
 }

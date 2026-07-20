@@ -8,7 +8,8 @@
  */
 
 function createPolicyMetrics(opts = {}) {
-  void opts;
+  const clock = opts.clock || (() => Date.now());
+  const startedAt = clock();
   let registered = 0;
   let evaluated = 0;
   let allow = 0;
@@ -18,6 +19,16 @@ function createPolicyMetrics(opts = {}) {
   let latTotalMs = 0;
   let latCount = 0;
   let latLastMs = 0;
+  // Production hardening (A-001) — additive counters/gauges.
+  let providerFailures = 0;
+  let integrityFailures = 0;
+  let eventPublicationFailures = 0;
+  let gaugeEnabled = () => 0;
+  let gaugeDisabled = () => 0;
+  function bindGauges({ enabled, disabled }) {
+    if (enabled) gaugeEnabled = enabled;
+    if (disabled) gaugeDisabled = disabled;
+  }
 
   const recordRegistered = () => (registered += 1);
   const recordDecision = (allowed) => {
@@ -26,6 +37,9 @@ function createPolicyMetrics(opts = {}) {
     else deny += 1;
   };
   const recordCache = (hit) => (hit ? (cacheHits += 1) : (cacheMisses += 1));
+  const recordProviderFailure = () => (providerFailures += 1);
+  const recordIntegrityFailure = () => (integrityFailures += 1);
+  const recordEventFailure = () => (eventPublicationFailures += 1);
   function recordLatency(ms) {
     if (typeof ms === 'number' && ms >= 0) {
       latTotalMs += ms;
@@ -47,6 +61,13 @@ function createPolicyMetrics(opts = {}) {
       cacheMissRatio: cacheTotal ? cacheMisses / cacheTotal : 0,
       avgEvaluationLatencyMs: latCount ? latTotalMs / latCount : 0,
       lastEvaluationLatencyMs: latLastMs,
+      // A-001 additions
+      enabled: gaugeEnabled(),
+      disabled: gaugeDisabled(),
+      providerFailures,
+      integrityFailures,
+      eventPublicationFailures,
+      uptimeMs: clock() - startedAt,
     };
   }
 
@@ -74,11 +95,32 @@ function createPolicyMetrics(opts = {}) {
           'Last evaluation latency',
           s.lastEvaluationLatencyMs
         ),
+        g('policy_enabled', 'Enabled policies', s.enabled),
+        g('policy_disabled', 'Disabled policies', s.disabled),
+        g('policy_provider_failures_total', 'Provider failures', s.providerFailures),
+        g('policy_integrity_failures_total', 'Integrity failures', s.integrityFailures),
+        g(
+          'policy_event_publication_failures_total',
+          'Event publication failures',
+          s.eventPublicationFailures
+        ),
+        g('policy_uptime_ms', 'Engine uptime', s.uptimeMs),
       ].join('\n') + '\n'
     );
   }
 
-  return { recordRegistered, recordDecision, recordCache, recordLatency, snapshot, prometheus };
+  return {
+    bindGauges,
+    recordRegistered,
+    recordDecision,
+    recordCache,
+    recordLatency,
+    recordProviderFailure,
+    recordIntegrityFailure,
+    recordEventFailure,
+    snapshot,
+    prometheus,
+  };
 }
 
 module.exports = { createPolicyMetrics };

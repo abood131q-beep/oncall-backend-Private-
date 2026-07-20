@@ -98,6 +98,22 @@ Every request/registration is forced into the extension's namespace (`ext.<owner
 extension can only author and evaluate its own policies. `register/enable/disable/list`
 require `policy:read`; `evaluate/explain` require `policy:evaluate`.
 
+## 7a. Production hardening (added in the completion pass)
+
+```js
+pol.policy.snapshot(namespace, policyId); // deep-frozen, immutable policy model
+pol.policy.verifyStartup(); // { ok, problems } — call before trusting the engine
+await pol.policy.verifyProvider(namespace); // checksum reconciliation vs the provider
+pol.policy.verifyCache(); // re-evaluate cached keys fresh; report stale entries
+await pol.policy.recover(namespace); // re-persist after a provider write failure
+pol.policy.diagnostics(); // policies/enabled/disabled/namespaces/generation/cache/uptime
+pol.policy.history(); // bounded lifecycle log
+pol.policy.evaluationHistory(); // bounded decision log
+```
+
+New metrics: enabled/disabled gauges, provider failures, integrity failures,
+event-publication failures, engine uptime. Extra optional dep: `historyLimit`.
+
 ## Out of scope (future work behind the provider port)
 
 External policy runtimes (OPA/Cedar/Casbin) as definition stores, and distributed policy
