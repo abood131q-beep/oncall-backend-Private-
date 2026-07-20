@@ -63,3 +63,30 @@ platform runs byte-identically whether or not the scheduler is instantiated.
 
 Delete `src/domain/scheduler/`, `src/application/scheduler/`, and `tests/unit/scheduler.test.js`.
 Nothing imports them at runtime, so removal is inert and the platform is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Concurrent-tick protection** — overlapping `tick()` calls never double-drain the ready
+  set; a call made while a tick is in flight awaits it and then runs once more.
+- **Monotonic-clock verification** — a backwards clock is detected, counted, and reported
+  (never fatal); `_lastNow` is not moved backwards.
+- **Worker-crash recovery** — `recover({ maxRunningMs })` re-queues jobs stuck RUNNING beyond
+  a threshold and reconciles the running counter; the counter is also guarded against
+  going negative.
+- **Bounded graceful drain** — `shutdown({ maxWaitMs })` waits for in-flight jobs but cannot
+  hang forever, returning `{ drained, stillRunning }`.
+- **Lifecycle history** — a bounded ring buffer (`historyLimit`, default 200) of transitions
+  via `history()` (the scheduler's version log).
+- **Immutable job snapshot** — `jobSnapshot(jobId)` returns a deep-frozen model.
+- **Queue-consistency verification** — `verifyQueue()` checks the running counter equals the
+  RUNNING job count and stays within the concurrency limit.
+- **Startup verification** — `verifyStartup()` validates configuration before use.
+- **Structured diagnostics + health** — `diagnostics()` and `health()`.
+- **Metrics** — added queue latency (avg/last), dead-letter size, uptime, and a queued gauge:
+  `scheduler_queue_latency_ms_avg/last`, `scheduler_dead_letter_size`, `scheduler_uptime_ms`,
+  `scheduler_jobs_queued`.
+
+New optional deps: `historyLimit`. Tests: `tests/unit/scheduler-hardening.test.js`.

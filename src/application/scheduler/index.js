@@ -18,7 +18,7 @@ const { SCHEDULER_EVENTS } = require('../../domain/scheduler/events');
 
 function createSchedulerPlatform(deps = {}) {
   const concurrency = deps.concurrency || 4;
-  const metrics = deps.metrics || createSchedulerMetrics({ concurrency });
+  const metrics = deps.metrics || createSchedulerMetrics({ concurrency, clock: deps.clock });
   const scheduler = createScheduler({
     publisher: deps.publisher,
     metrics,

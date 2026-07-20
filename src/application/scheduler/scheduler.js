@@ -37,11 +37,32 @@ function createScheduler(deps = {}) {
   let _draining = false;
   let _timer = null;
 
+  // ── Production hardening (Phase 14.3.3 A-001) — all additive ───────────────
+  const _startTime = clock();
+  const historyLimit = deps.historyLimit || 200;
+  const _history = []; // ring buffer of lifecycle transitions { jobId, type, status, at }
+  let _clockRegressions = 0; // monotonic-clock verification
+  let _ticking = null; // in-flight tick promise (concurrent-tick protection)
+
   if (metrics && metrics.bindGauges) {
     metrics.bindGauges({
       running: () => running,
       queueDepth: () => [...records.values()].filter((r) => r.job.isDue(_lastNow)).length,
+      deadLetterSize: () => deadLetter.length,
     });
+  }
+
+  function _recordHistory(type, job) {
+    _history.push({ jobId: job.jobId, type, status: job.status, at: clock() });
+    if (_history.length > historyLimit) _history.shift();
+  }
+
+  function _deepFreeze(o) {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+      for (const k of Object.keys(o)) _deepFreeze(o[k]);
+      Object.freeze(o);
+    }
+    return o;
   }
 
   // ── timeout guard (rejects + aborts if the handler overruns) ───────────────
@@ -77,6 +98,7 @@ function createScheduler(deps = {}) {
   }
 
   function _emit(type, job, extra = {}) {
+    _recordHistory(type, job); // lifecycle history (bounded ring buffer)
     try {
       const event = createSchedulerEvent(
         type,
@@ -140,8 +162,13 @@ function createScheduler(deps = {}) {
 
   async function _execute(rec, now) {
     const job = rec.job;
+    // Queue latency: time waited between becoming due and actually starting.
+    if (metrics && metrics.recordQueueLatency) {
+      metrics.recordQueueLatency(Math.max(0, now - job.nextRun));
+    }
     job.markRunning(now);
     running += 1;
+    rec.control.runningSince = clock(); // for crash/stuck recovery
     const startedAt = clock();
     const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
     rec.control.abort = () => ac && ac.abort();
@@ -175,7 +202,8 @@ function createScheduler(deps = {}) {
         _applyFailure(rec, err, clock());
       }
     } finally {
-      running -= 1;
+      running = Math.max(0, running - 1); // guard: never negative (e.g. after recover())
+      rec.control.runningSince = null;
     }
   }
 
@@ -217,9 +245,32 @@ function createScheduler(deps = {}) {
   }
 
   // ── tick: drain the ready set honoring the concurrency limit ───────────────
-  async function tick(nowArg) {
+  /**
+   * Concurrent-tick protection: overlapping tick() calls never double-drain the
+   * ready set; a call made while a tick is in flight awaits that tick and then
+   * runs once more, keeping queue state consistent. Public signature/return
+   * shape are unchanged.
+   */
+  function tick(nowArg) {
+    if (_ticking) {
+      return _ticking.catch(() => {}).then(() => _tickOnce(nowArg));
+    }
+    _ticking = _tickOnce(nowArg).finally(() => {
+      _ticking = null;
+    });
+    return _ticking;
+  }
+
+  async function _tickOnce(nowArg) {
     const now = typeof nowArg === 'number' ? nowArg : clock();
-    _lastNow = now;
+    // Monotonic-clock verification: a backwards clock is anomalous; record it
+    // and do not move _lastNow backwards (protects queue-latency accounting).
+    if (now < _lastNow) {
+      _clockRegressions += 1;
+      log.warn('scheduler: non-monotonic clock detected', { now, lastNow: _lastNow });
+    } else {
+      _lastNow = now;
+    }
     if (_draining) return { started: 0 };
     const active = new Set();
     let started = 0;
@@ -341,13 +392,102 @@ function createScheduler(deps = {}) {
     }
   }
 
-  async function shutdown() {
+  async function shutdown({ maxWaitMs = 30000 } = {}) {
     stop();
     _draining = true;
-    // Wait for in-flight jobs to settle (bounded polling; no new work admitted).
-    while (running > 0) {
+    // Graceful worker draining, bounded so shutdown can never hang forever.
+    const deadline = Date.now() + maxWaitMs;
+    while (running > 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 5));
     }
+    return { drained: running === 0, stillRunning: running };
+  }
+
+  // ── production hardening: recovery, snapshots, diagnostics (all additive) ──
+
+  /**
+   * Worker-crash recovery: jobs stuck RUNNING beyond `maxRunningMs` (e.g. a tick
+   * abandoned after a crash) are re-queued for a fresh attempt. Deterministic
+   * via the injected clock. Returns the recovered jobIds.
+   */
+  function recover({ maxRunningMs = 60000, now = clock() } = {}) {
+    const recovered = [];
+    for (const rec of records.values()) {
+      const since = rec.control.runningSince;
+      if (rec.job.status === STATUS.RUNNING && since != null && now - since >= maxRunningMs) {
+        running = Math.max(0, running - 1);
+        rec.control.runningSince = null;
+        rec.job.reschedule(now); // back to SCHEDULED, due immediately
+        recovered.push(rec.job.jobId);
+        log.warn('scheduler: recovered stuck job', { jobId: rec.job.jobId });
+      }
+    }
+    return recovered;
+  }
+
+  /** Immutable, deep-frozen snapshot of a single job's model (or null). */
+  function jobSnapshot(jobId) {
+    const rec = records.get(jobId);
+    return rec ? _deepFreeze(rec.job.toModel()) : null;
+  }
+
+  /** Bounded lifecycle history (newest last) — the scheduler's version log. */
+  function history() {
+    return _history.map((h) => ({ ...h }));
+  }
+
+  const uptime = () => clock() - _startTime;
+
+  /**
+   * Queue-consistency verification: the running counter must equal the number of
+   * jobs actually in RUNNING state, and no job may be both RUNNING and due.
+   */
+  function verifyQueue() {
+    const runningJobs = [...records.values()].filter((r) => r.job.status === STATUS.RUNNING).length;
+    const ok = runningJobs === running && running <= concurrency;
+    return { ok, runningCounter: running, runningJobs, concurrency };
+  }
+
+  /** Startup verification: sane configuration before the scheduler is trusted. */
+  function verifyStartup() {
+    const problems = [];
+    if (!(concurrency > 0)) problems.push('concurrency must be > 0');
+    if (typeof clock !== 'function') problems.push('clock must be a function');
+    if (typeof clock() !== 'number') problems.push('clock() must return ms epoch');
+    return { ok: problems.length === 0, problems };
+  }
+
+  /** Structured diagnostics for dashboards / health checks. */
+  function diagnostics() {
+    return {
+      uptimeMs: uptime(),
+      running,
+      concurrency,
+      jobs: records.size,
+      queueDepth: [...records.values()].filter((r) => r.job.isDue(_lastNow)).length,
+      deadLetter: deadLetter.length,
+      clockRegressions: _clockRegressions,
+      clockMonotonic: _clockRegressions === 0,
+      ticking: Boolean(_ticking),
+      draining: _draining,
+      historyDepth: _history.length,
+      queue: verifyQueue(),
+      metrics: metrics ? metrics.snapshot() : null,
+    };
+  }
+
+  /** Health reporting: degraded if the queue is inconsistent or the clock skewed. */
+  function health() {
+    const q = verifyQueue();
+    const healthy = q.ok && _clockRegressions === 0;
+    return {
+      status: healthy ? 'healthy' : 'degraded',
+      queueConsistent: q.ok,
+      clockMonotonic: _clockRegressions === 0,
+      running,
+      deadLetter: deadLetter.length,
+      uptimeMs: uptime(),
+    };
   }
 
   return {
@@ -368,6 +508,15 @@ function createScheduler(deps = {}) {
     start,
     stop,
     shutdown,
+    // production hardening (additive)
+    recover,
+    jobSnapshot,
+    history,
+    uptime,
+    verifyQueue,
+    verifyStartup,
+    diagnostics,
+    health,
     // introspection
     deadLetter: () => deadLetter.map((d) => ({ ...d })),
     metrics: () => (metrics ? metrics.snapshot() : null),

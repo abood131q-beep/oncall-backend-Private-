@@ -97,6 +97,26 @@ const portFactories = {
 The extension can only see and control its **own** jobs, and scheduling requires the
 `schedule:jobs` capability to be granted (otherwise the call throws a `PermissionError`).
 
+## 8a. Production hardening (added in the completion pass)
+
+Overlapping ticks are serialized (no double-draining); a backwards clock is detected and
+reported (`diagnostics().clockRegressions`) but never fatal; `shutdown({ maxWaitMs })` drains
+in-flight work but is bounded so it can't hang. Additional operator surfaces:
+
+```js
+s.recover({ maxRunningMs: 60000 }); // re-queue jobs stuck RUNNING after a crash
+s.jobSnapshot(jobId); // deep-frozen, immutable job model
+s.history(); // bounded lifecycle-transition log
+s.verifyQueue(); // { ok, runningCounter, runningJobs, concurrency }
+s.verifyStartup(); // { ok, problems }  — call before trusting the scheduler
+s.diagnostics(); // structured health for dashboards
+s.health(); // { status: 'healthy' | 'degraded', ... }
+s.uptime(); // ms since construction
+```
+
+New metrics: `scheduler_queue_latency_ms_avg/last`, `scheduler_dead_letter_size`,
+`scheduler_uptime_ms`, `scheduler_jobs_queued`. Extra optional dep: `historyLimit`.
+
 ## Out of scope (by mandate)
 
 No distributed scheduling, no external queues, no cross-restart persistence, and no business

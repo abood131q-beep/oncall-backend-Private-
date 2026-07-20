@@ -19,12 +19,30 @@ function createSchedulerMetrics(opts = {}) {
   let lastDurMs = 0;
   const concurrency = opts.concurrency || 1;
 
+  // Production hardening (Phase 14.3.3 A-001) — additive counters/gauges.
+  const clock = opts.clock || (() => Date.now());
+  const startedAt = clock();
+  let qLatTotalMs = 0;
+  let qLatCount = 0;
+  let qLatLastMs = 0;
+
   // Gauges supplied by the engine at snapshot time.
   let gaugeRunning = () => 0;
   let gaugeQueueDepth = () => 0;
-  function bindGauges({ running, queueDepth }) {
+  let gaugeDeadLetter = () => 0;
+  function bindGauges({ running, queueDepth, deadLetterSize }) {
     if (running) gaugeRunning = running;
     if (queueDepth) gaugeQueueDepth = queueDepth;
+    if (deadLetterSize) gaugeDeadLetter = deadLetterSize;
+  }
+
+  /** Time a job waited between becoming due (nextRun) and starting. */
+  function recordQueueLatency(ms) {
+    if (typeof ms === 'number' && ms >= 0) {
+      qLatTotalMs += ms;
+      qLatCount += 1;
+      qLatLastMs = ms;
+    }
   }
 
   const recordScheduled = () => (scheduled += 1);
@@ -56,6 +74,12 @@ function createSchedulerMetrics(opts = {}) {
       queueDepth: gaugeQueueDepth(),
       workerUtilization: concurrency ? running / concurrency : 0,
       concurrency,
+      // A-001 additions
+      queued: gaugeQueueDepth(),
+      queueLatencyAvgMs: qLatCount ? qLatTotalMs / qLatCount : 0,
+      queueLatencyLastMs: qLatLastMs,
+      deadLetterSize: gaugeDeadLetter(),
+      uptimeMs: clock() - startedAt,
     };
   }
 
@@ -75,7 +99,12 @@ function createSchedulerMetrics(opts = {}) {
         g('scheduler_execution_duration_ms_avg', 'Avg execution duration', s.avgDurationMs),
         g('scheduler_execution_duration_ms_last', 'Last execution duration', s.lastDurationMs),
         g('scheduler_queue_depth', 'Due jobs waiting for a worker', s.queueDepth),
+        g('scheduler_jobs_queued', 'Jobs currently queued (ready set depth)', s.queued),
         g('scheduler_worker_utilization', 'running / concurrency', s.workerUtilization),
+        g('scheduler_queue_latency_ms_avg', 'Avg wait from due to start', s.queueLatencyAvgMs),
+        g('scheduler_queue_latency_ms_last', 'Last wait from due to start', s.queueLatencyLastMs),
+        g('scheduler_dead_letter_size', 'Dead-lettered jobs', s.deadLetterSize),
+        g('scheduler_uptime_ms', 'Scheduler uptime', s.uptimeMs),
       ].join('\n') + '\n'
     );
   }
@@ -88,6 +117,7 @@ function createSchedulerMetrics(opts = {}) {
     recordTimedOut,
     recordCancelled,
     recordRetry,
+    recordQueueLatency,
     snapshot,
     prometheus,
   };
