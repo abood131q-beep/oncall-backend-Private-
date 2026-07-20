@@ -1,0 +1,46 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph FF["Feature Flag Kernel Service — ADR-029"]
+    SERVICE["featuresService\nregister/evaluate/enable\ndisable/update/list/verify/health"]
+    CACHE["evaluation cache\n(checksum-keyed · FIFO)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped features() port\nfeature:read · feature:evaluate"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    FLAG["flag (definition + checksum)"]
+    EVAL["evaluation (deterministic + explained)"]
+    TARGET["targeting (constraints · semver)"]
+    ROLL["rollout (deterministic hashing)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (definitions only)"]
+    MEM["memory"]
+    FUT["extension points:\nstorage · postgresql · redis · mongodb · cloud-config · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  POLICY["Policy Engine (ADR-025)\ngoverns feature:read/evaluate"]
+  AUDIT["Audit Platform (ADR-026)\nrecords feature events"]
+
+  SVC --> SERVICE
+  EXT -->|this.features| ADAPTER --> SERVICE
+  SERVICE --> EVAL
+  EVAL --> TARGET
+  EVAL --> ROLL
+  SERVICE --> FLAG
+  SERVICE --> CACHE
+  SERVICE --> Providers
+  SERVICE -->|Registered/Updated/Enabled/Disabled/Evaluated/Rejected| BACKBONE
+  BACKBONE -.-> AUDIT
+  POLICY -.->|authorize| ADAPTER
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,CACHE,METRICS,ADAPTER kernel;

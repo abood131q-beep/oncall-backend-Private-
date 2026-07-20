@@ -1,0 +1,36 @@
+flowchart TD
+  START([evaluate name + context]) --> READ[read definition from provider]
+  READ -->|not found| NF[FeatureRejected\nthrow FeatureNotFoundError]
+  READ --> CK{cache hit?\nkey = ns:name:checksum:ctxHash}
+  CK -->|yes| HIT[return cached result\nrecord cacheHit]
+  CK -->|no| INT{checksum valid?}
+  INT -->|no| IErr[record integrityFailure\nFeatureRejected\nthrow IntegrityError]
+  INT -->|yes| STATE{state}
+
+  STATE -->|archived| OFF1[off value\nreason = archived]
+  STATE -->|disabled| OFF2[off value\nreason = disabled]
+  STATE -->|enabled| TGT{targeting constraints\nplatform/version/country/region/tenant/env}
+
+  TGT -->|not matched| OFF3[off value\nreason = not_targeted · failed]
+  TGT -->|matched| RULES[ordered rules\npriority desc, then declared order]
+
+  RULES --> RMATCH{rule matches?}
+  RMATCH -->|yes + no rollout| RV[rule.value\nreason = rule_match]
+  RMATCH -->|yes + rollout included| RV
+  RMATCH -->|yes + rollout excluded| RULES
+  RMATCH -->|no more rules| FROLL{flag rollout?}
+
+  FROLL -->|included| DIN[default value\nreason = rollout_included]
+  FROLL -->|excluded| OFF4[off value\nreason = rollout_excluded]
+  FROLL -->|none| DEF[default value\nreason = default]
+
+  OFF1 --> CACHE[cache result · record cacheMiss]
+  OFF2 --> CACHE
+  OFF3 --> CACHE
+  OFF4 --> CACHE
+  RV --> CACHE
+  DIN --> CACHE
+  DEF --> CACHE
+  CACHE --> EMIT[emit FeatureEvaluated / FeatureRejected\nrecord evaluation + latency]
+  HIT --> EMIT
+  EMIT --> END([result: value · reason · served · explanation])
