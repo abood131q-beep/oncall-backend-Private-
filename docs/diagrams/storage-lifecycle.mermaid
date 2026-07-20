@@ -1,0 +1,16 @@
+stateDiagram-v2
+  [*] --> Absent
+  Absent --> Live: put() (create, version 1 → StorageCreated)
+  Live --> Live: put()/update() (version + 1 → StorageUpdated)
+  Live --> Conflict: update()/delete() with stale expectedVersion
+  Conflict --> Live: caller re-reads current version and retries
+  Live --> Expired: TTL elapsed (expiresAt ≤ now)
+  Expired --> Absent: lazily purged on next access
+  Live --> Absent: delete() (→ StorageDeleted)
+
+  note right of Live
+    version is monotonic; optimistic
+    concurrency compares expectedVersion.
+    Writes serialize through the kernel
+    mutex so read-modify-write is atomic.
+  end note

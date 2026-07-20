@@ -1,0 +1,36 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph Platform["Storage Kernel Service — Phase 14.3.4"]
+    SERVICE["storageService\nget/put/update/delete/exists\nlist/query/transaction/batch/health"]
+    CACHE["cache\nread · write-through · version · invalidation"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped storage() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    REC["record (versioning · TTL · optimistic)"]
+    QUERY["query (filter · sort · paginate)"]
+    ERR["errors"]
+    EVENTS["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (port)"]
+    MEM["memory"]
+    FILE["file"]
+    FUT["extension points:\nsqlite·postgres·mysql·mongodb·redis·s3·azure·gcs"]
+  end
+
+  PORT["EventPublisher port (ADR-016)"]
+
+  SVC --> SERVICE
+  EXT -->|this.storage| ADAPTER --> SERVICE
+  SERVICE --> CACHE
+  SERVICE --> METRICS
+  SERVICE -->|record ops| REC
+  SERVICE -->|query| QUERY
+  SERVICE -->|publish lifecycle| EVENTS --> PORT
+  SERVICE -->|read/write/scan/writeBatch| Providers

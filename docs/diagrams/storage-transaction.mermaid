@@ -1,0 +1,29 @@
+sequenceDiagram
+  autonumber
+  participant C as Caller
+  participant S as storageService
+  participant O as Overlay (staged ops)
+  participant P as Provider
+  participant EV as EventPublisher port
+
+  C->>S: transaction(fn)
+  Note over S: acquire write mutex (atomic read-modify-write)
+  S->>O: create empty overlay + op list
+  loop fn(tx) stages operations
+    C->>S: tx.get / put / update / delete
+    S->>O: read-your-writes (overlay → provider), stage put/del + pending event
+    Note over S: tx.transaction() → TransactionError (nested guard)
+  end
+  alt fn resolves
+    S->>P: writeBatch(ops)  (atomic commit)
+    P-->>S: ok
+    S->>S: apply cache + record metrics
+    S->>EV: StorageCreated/Updated/Deleted (per op)
+    S->>EV: TransactionCommitted
+    S-->>C: result
+  else fn throws
+    Note over S: nothing was written → automatic rollback
+    S->>EV: TransactionRolledBack
+    S-->>C: rethrow error
+  end
+  Note over S: release write mutex
