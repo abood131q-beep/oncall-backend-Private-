@@ -1,0 +1,32 @@
+sequenceDiagram
+  autonumber
+  participant C as Caller
+  participant E as Workflow Engine
+  participant K as Lock (ADR-022)
+  participant S as Storage (ADR-021)
+  participant Q as Scheduler (ADR-020)
+  participant B as Event Backbone (ADR-016)
+
+  Note over C,E: signal(workflowId, event)
+  C->>E: signal()
+  E->>E: serialize per-workflow (in-process chain)
+  E->>K: tryAcquire(workflow/workflowId, engineId)
+  K-->>E: held (guards concurrent modification)
+  E->>S: get(instance)
+  S-->>E: instance model
+  E->>E: find transition · run guard · run action (from definition)
+  E->>S: put(next instance state)
+  E->>Q: cancel(old timeout) + scheduleAfter(new state timeout)
+  E->>B: publish WorkflowTransitioned
+  alt target is terminal
+    E->>S: put(completed/failed)
+    E->>Q: cancel(timeout)
+    E->>B: publish WorkflowCompleted / WorkflowFailed
+  end
+  E->>K: release(workflow/workflowId)
+  E-->>C: updated instance model
+
+  Note over Q,E: later — timeout fires
+  Q->>E: handler → _onTimeout(workflowId, state, version)
+  E->>K: tryAcquire → get → (state+version still match?) → transition to onTimeout.to
+  E->>B: publish WorkflowTimedOut (+ Completed/Failed if terminal)

@@ -1,0 +1,17 @@
+stateDiagram-v2
+  [*] --> requested: start() → WorkflowStarted
+  requested --> accepted: accept [guard: rider present] / action: set driver → WorkflowTransitioned
+  requested --> expired: onTimeout(afterMs) via Scheduler → WorkflowTimedOut
+  accepted --> completed: finish → WorkflowTransitioned
+  completed --> [*]: terminal → WorkflowCompleted
+  expired --> [*]: terminal + failure → WorkflowFailed
+  requested --> cancelled: cancel()
+  accepted --> cancelled: cancel()
+  cancelled --> [*]: → WorkflowCancelled
+
+  note right of requested
+    Example "trip" definition. States/transitions/guards/
+    actions/timeouts are declarative data — the engine
+    interprets them and holds no business logic.
+    A real transition cancels the pending timeout timer.
+  end note

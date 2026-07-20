@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph Consumers["Consumers"]
+    SVC["Platform Services (trips, rentals, payments)"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph WF["Workflow Engine — ADR-023 (integrated kernel component)"]
+    ENGINE["workflowService\nregister/start/signal/cancel/get/list/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nowner-scoped workflow() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    DEF["definition (state machine)"]
+    INST["instance (aggregate + history)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Kernels["Kernel Services (via ports only)"]
+    STORAGE["Storage (ADR-021)\nworkflow state"]
+    LOCK["Lock (ADR-022)\nconcurrency guard"]
+    SCHED["Scheduler (ADR-020)\nstate timeouts"]
+    CONFIG["Configuration (ADR-019)\npolicies"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+
+  SVC --> ENGINE
+  EXT -->|this.workflow| ADAPTER --> ENGINE
+  ENGINE --> METRICS
+  ENGINE -->|interprets| DEF
+  ENGINE -->|mutates| INST
+  ENGINE -->|put/get/list| STORAGE
+  ENGINE -->|tryAcquire/release| LOCK
+  ENGINE -->|scheduleAfter/cancel| SCHED
+  ENGINE -->|get policy| CONFIG
+  ENGINE -->|publish Workflow* | EVT --> BACKBONE
