@@ -67,3 +67,29 @@ An expert review raised six production-grade points. Status after closure:
 Closure evidence: +13 tests (`tests/unit/eventBackbone.test.js`), full suite 205→**218**,
 lint/format clean, all application A/B harnesses still byte-identical (zero hot-path change).
 All additions are additive and port-based; rollback remains inert.
+
+## Amendment A-002 (2026-07-20) — Consumer Inbox (exactly-once effect)
+
+Review point #7: an at-least-once broker WILL redeliver, so the **Outbox alone is not
+enough** — the consumer side needs an **Inbox** to make effects idempotent. Chain completed:
+`Transaction → Outbox → Broker → Inbox → Handler`.
+
+Added `application/shared/inbox.js` (`createInbox`, `createInMemoryInboxStore`):
+- `guard(consumer, handler)` records processed **eventId per consumer** (durable-capable
+  port), so a redelivery of the same id runs the effect **exactly once** for that consumer.
+- **Per-consumer scope**: the same event is processed once by *each* distinct consumer
+  (fan-out preserved), once per consumer.
+- **Atomic mark**: the id is marked via the handler's `txRunner`, so effect + dedupe commit
+  together — a crash between them cannot leave the effect applied but the record lost.
+- **Failure passes through**: a throwing handler does NOT mark processed → redelivery retries
+  (at-least-once preserved; no false "done").
+- **Concurrent-duplicate safety**: a per-`(consumer,eventId)` in-flight lock serializes
+  parallel redeliveries (found and fixed via the end-to-end chain test where a broker
+  fanned out a duplicate concurrently); a durable store adds a UNIQUE constraint as the
+  cross-process guarantee.
+- Dedupe keys on **eventId, never payload** (tested: identical payload + new id → processed
+  twice; same id → once).
+
+Evidence: +6 tests (`tests/unit/inbox.test.js`) incl. the full Outbox→Broker→Inbox→Handler
+chain proving exactly-once effect under duplicate delivery; full suite 218→**224**;
+lint/format clean; A/B byte-identical; additive + port-based; rollback inert.
