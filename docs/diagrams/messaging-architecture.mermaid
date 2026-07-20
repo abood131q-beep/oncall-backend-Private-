@@ -1,0 +1,33 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph MQ["Messaging Kernel Service — ADR-024"]
+    SERVICE["messagingService\npublish/subscribe/unsubscribe\nrequest/reply/broadcast/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped messaging() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    MSG["message (envelope + TTL)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (transport port)"]
+    MEM["memory (in-process)"]
+    FUT["extension points:\nkafka·rabbitmq·nats·redis-streams·azure·gcp·sqs-sns"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+
+  SVC --> SERVICE
+  EXT -->|this.messaging| ADAPTER --> SERVICE
+  SERVICE --> METRICS
+  SERVICE -->|build/validate/TTL| MSG
+  SERVICE -->|publish lifecycle| EVT --> BACKBONE
+  SERVICE -->|subscribe/select/selectAll| Providers
+  note1["service owns delivery policy:\nretry · TTL · dead-letter · req/reply"]
+  SERVICE -.-> note1

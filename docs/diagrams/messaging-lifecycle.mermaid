@@ -1,0 +1,20 @@
+stateDiagram-v2
+  [*] --> Published: publish()/broadcast()/request() → MessagePublished
+  Published --> Expired: now ≥ expiresAt (TTL) → MessageExpired
+  Published --> Delivering: select target(s)
+  Delivering --> Delivered: handler ack (resolves) → MessageDelivered
+  Delivering --> Retrying: handler nack (throws), retries remain → MessageRetried
+  Retrying --> Delivering: after delayMs
+  Retrying --> DeadLettered: retries exhausted → DeadLettered
+  Delivered --> [*]
+  Expired --> [*]
+  DeadLettered --> [*]
+
+  note right of Delivering
+    Delivery model chosen by the caller:
+    • pub/sub  → every distinct group
+    • p2p      → one member per shared group (round-robin)
+    • broadcast→ every subscriber
+    • request  → resolves on reply(), else RequestTimeoutError
+    A failing subscriber never blocks the others.
+  end note

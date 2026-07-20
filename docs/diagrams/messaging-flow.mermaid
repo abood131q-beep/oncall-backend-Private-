@@ -1,0 +1,37 @@
+sequenceDiagram
+  autonumber
+  participant P as Publisher
+  participant S as messagingService
+  participant PR as Provider (transport)
+  participant H as Subscriber handler
+  participant EV as EventPublisher port
+
+  P->>S: publish({ topic, payload, ttlMs, retryPolicy })
+  S->>S: build message (correlationId, expiresAt)
+  S->>EV: MessagePublished
+  alt message expired (TTL)
+    S->>EV: MessageExpired
+    S-->>P: { delivered: 0, expired: true }
+  else deliver
+    S->>PR: select(topic)  (one per group / pub-sub across groups)
+    PR-->>S: [ targets ]
+    loop each target
+      S->>H: handler(message)
+      alt ack (resolves)
+        S->>EV: MessageDelivered
+      else nack (throws) and retries remain
+        S->>EV: MessageRetried
+        S->>H: handler(message)  (retry, after delayMs)
+      else retries exhausted
+        S->>S: push to dead-letter
+        S->>EV: DeadLettered
+      end
+    end
+    S-->>P: { delivered, failed }
+  end
+
+  Note over P,S: request/reply
+  P->>S: request({ topic }) → pending(correlationId)
+  S->>H: handler(message with replyExpected)
+  H->>S: reply(message, payload)
+  S-->>P: resolve(payload)  (or RequestTimeoutError)
