@@ -1,0 +1,30 @@
+sequenceDiagram
+  autonumber
+  participant C as Caller
+  participant S as auditService
+  participant P as Provider (append-only)
+  participant EV as EventPublisher port
+
+  Note over C,S: record(spec) — serialized per namespace
+  C->>S: record({ action, actor, correlationId, ... })
+  S->>P: tail(namespace)
+  P-->>S: previous record (or null)
+  S->>S: sequence = prev.sequence + 1<br/>prevChecksum = prev.checksum (or GENESIS)<br/>checksum = sha256(content + prevChecksum) → freeze
+  S->>P: append(namespace, record)  (immutable)
+  S->>EV: AuditRecorded (summary)
+  S-->>C: frozen record
+
+  Note over C,S: verify(namespace) — integrity
+  C->>S: verify()
+  S->>P: scan(namespace)
+  P-->>S: records (append order)
+  loop each record i
+    S->>S: checksum matches content?  prevChecksum == records[i-1].checksum?  sequence == i?
+  end
+  alt intact
+    S->>EV: AuditVerified
+    S-->>C: { ok: true, checked }
+  else tampered / broken / gap
+    S->>EV: AuditIntegrityFailure
+    S-->>C: { ok: false, issues }
+  end

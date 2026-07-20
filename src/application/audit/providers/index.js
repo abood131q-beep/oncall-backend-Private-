@@ -1,0 +1,12 @@
+'use strict';
+
+/**
+ * Audit provider registry (Phase 14.7 / ADR-026 §4). Implemented adapters +
+ * declared extension points for future append-only stores. Business logic never
+ * imports a concrete provider; the composition root wires them here.
+ */
+
+const { createMemoryProvider } = require('./memoryProvider');
+const { FUTURE_PROVIDERS, futureProvider } = require('../providerPort');
+
+module.exports = { createMemoryProvider, FUTURE_PROVIDERS, futureProvider };

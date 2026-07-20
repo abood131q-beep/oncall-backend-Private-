@@ -1,0 +1,35 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph AUD["Audit Kernel Service — ADR-026 (immutable, append-only)"]
+    SERVICE["auditService\nrecord/query/get/verify/health\n(per-namespace append serialization)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped audit() port"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    REC["record (immutable + checksum + hash chain)"]
+    QUERY["query (filter/sort/paginate)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (append-only store)"]
+    MEM["memory"]
+    FUT["extension points:\nstorage · postgres · mongodb · object-storage"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+
+  SVC --> SERVICE
+  EXT -->|this.audit| ADAPTER --> SERVICE
+  SERVICE --> METRICS
+  SERVICE -->|create/verify| REC
+  SERVICE -->|query| QUERY
+  SERVICE -->|publish lifecycle| EVT --> BACKBONE
+  SERVICE -->|append/scan/get/tail| Providers
+  note1["engine owns integrity + query;\nproviders persist records only (no update/delete)"]
+  Providers -.-> note1
