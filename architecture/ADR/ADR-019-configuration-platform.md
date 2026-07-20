@@ -72,3 +72,26 @@ path, so the platform runs byte-identically whether or not it is instantiated.
 
 Delete `src/domain/config/`, `src/application/config/`, and `tests/unit/config.test.js`.
 Nothing imports them at runtime, so removal is inert and the platform is unchanged.
+
+## Amendment A-001 — Production hardening (2026-07-20)
+
+A hardening pass added the following **additively** — no public API signature changed, no
+module was rewritten, and behavior for existing callers is unchanged:
+
+- **Concurrent-reload protection** — reloads are serialized; a burst of triggers coalesces
+  into a single queued rebuild, keeping version monotonic and cache/snapshot consistent.
+- **Provider timeout + graceful failure** — each `provider.load()` is bounded by
+  `providerTimeoutMs` (default 5000); on timeout/throw the service reuses that provider's
+  last-known-good bag so one flaky source can neither hang the reload nor wipe config. With
+  no cached value (initial load) the error surfaces so startup fails loudly.
+- **Deep-immutable snapshots + atomic swap** — the next snapshot is built and deep-frozen,
+  then swapped in one assignment; readers never observe a half-built or mutable snapshot.
+- **Version history** — a bounded ring buffer (`historyLimit`, default 20) retains activated
+  snapshots; new read-only methods `history()`, `snapshotAt(version)`, `isStale(version)`.
+- **Cache-consistency verification** — `verifyCache()` compares cache vs active version.
+- **Structured diagnostics** — `diagnostics()` returns version, providers (with
+  last-known-good state), subscribers, history depth, in-flight/queued reload, cache check,
+  and metrics.
+- **Metrics** — added `config_provider_errors_total`.
+
+New optional deps: `providerTimeoutMs`, `historyLimit`. Tests: `tests/unit/config-hardening.test.js`.

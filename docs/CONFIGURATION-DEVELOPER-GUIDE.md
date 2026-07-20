@@ -105,6 +105,24 @@ cfg.metrics.snapshot(); // provider latency, reload count/duration, validation f
 cfg.metrics.prometheus(); // Prometheus exposition text
 ```
 
+## 9a. Production hardening (added in the completion pass)
+
+Reloads are serialized and coalesced, so concurrent triggers can't race. Each provider load
+is bounded by `providerTimeoutMs` (default 5000); on timeout or error the platform reuses that
+provider's last-known-good values (graceful degradation) rather than hanging or wiping config.
+Activated snapshots are deep-frozen and swapped atomically.
+
+```js
+cfg.service.history(); // [{ version, at, keys }] — bounded ring buffer
+cfg.service.snapshotAt(version); // a retained snapshot (redacted), or null if evicted
+cfg.service.isStale(myVersion); // true if myVersion !== active version
+cfg.service.verifyCache(); // { ok, cacheVersion, currentVersion }
+cfg.service.diagnostics(); // structured health for dashboards / health checks
+```
+
+Extra optional composition deps: `providerTimeoutMs`, `historyLimit`. New metric:
+`config_provider_errors_total`.
+
 ## 10. SDK integration (ADR-018)
 
 ```js

@@ -51,6 +51,54 @@ function createConfigService(deps = {}) {
   const watchers = new Map();
   const providerUnsubs = [];
 
+  // ── Production hardening (Phase 14.3.2 completion) — all additive ──────────
+  const providerTimeoutMs = deps.providerTimeoutMs || 5000; // §provider timeout
+  const historyLimit = deps.historyLimit || 20; // §version history depth
+  const _lastGood = new Map(); // provider name → last successful bag (graceful failure)
+  const _history = []; // ring buffer of activated snapshots (immutable)
+  // Concurrent-reload protection: at most one reload runs; extra requests coalesce
+  // into a single queued run so a burst of triggers collapses to one rebuild.
+  let _inflight = null;
+  let _queued = null;
+
+  /** Reject a promise if it does not settle within `ms` (provider timeout guard). */
+  function _withTimeout(promise, ms, label) {
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const t = setTimeout(() => {
+        if (!done) {
+          done = true;
+          reject(new Error(`config: provider "${label}" timed out after ${ms}ms`));
+        }
+      }, ms);
+      Promise.resolve(promise).then(
+        (v) => {
+          if (!done) {
+            done = true;
+            clearTimeout(t);
+            resolve(v);
+          }
+        },
+        (e) => {
+          if (!done) {
+            done = true;
+            clearTimeout(t);
+            reject(e);
+          }
+        }
+      );
+    });
+  }
+
+  /** Deep-freeze for truly immutable snapshots (no post-activation mutation). */
+  function _deepFreeze(o) {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+      for (const k of Object.keys(o)) _deepFreeze(o[k]);
+      Object.freeze(o);
+    }
+    return o;
+  }
+
   for (const p of deps.providers || []) _registerProvider(p, { silent: true });
 
   function _registerProvider(p, { silent = false } = {}) {
@@ -71,12 +119,37 @@ function createConfigService(deps = {}) {
     return p;
   }
 
+  /**
+   * Load one provider with timeout + graceful failure. On timeout/throw, fall
+   * back to that provider's last-known-good bag so a single flaky source can
+   * neither hang the reload nor wipe configuration. If there is no cached value
+   * (i.e. initial load), the error propagates so startup fails loudly.
+   */
+  async function _loadProvider(p) {
+    const run = metrics ? metrics.timeProvider(p.name, () => p.load()) : Promise.resolve(p.load());
+    try {
+      const bag = await _withTimeout(run, providerTimeoutMs, p.name);
+      _lastGood.set(p.name, bag);
+      return bag;
+    } catch (e) {
+      if (metrics && metrics.recordProviderError) metrics.recordProviderError(p.name);
+      if (_lastGood.has(p.name)) {
+        log.warn('config: provider load failed; using last-known-good', {
+          provider: p.name,
+          err: e.message,
+        });
+        return _lastGood.get(p.name);
+      }
+      throw e; // no cached value → surface at startup
+    }
+  }
+
   // ── layer assembly + resolution ──────────────────────────────────────────
   async function _composeLayers() {
     // Provider outputs merged into their declared layers (array order wins).
     const layerBags = { provider: {}, file: {}, environment: {} };
     for (const p of providers) {
-      const bag = metrics ? await metrics.timeProvider(p.name, () => p.load()) : await p.load();
+      const bag = await _loadProvider(p);
       const target = layerBags[p.layer] || (layerBags[p.layer] = {});
       Object.assign(target, bag);
     }
@@ -113,7 +186,31 @@ function createConfigService(deps = {}) {
   }
 
   // ── public: reload (build/rebuild the snapshot) ────────────────────────────
-  async function reload({ origin = 'reload' } = {}) {
+  /**
+   * Serialized reload. Concurrent callers never interleave: while a reload runs,
+   * further requests coalesce into a SINGLE queued run (redundant triggers are
+   * effectively cancelled), preserving version monotonicity and cache/snapshot
+   * consistency. Public signature/return shape are unchanged.
+   */
+  function reload(opts = {}) {
+    if (_inflight) {
+      if (!_queued) {
+        _queued = _inflight
+          .catch(() => {})
+          .then(() => _reloadOnce(opts))
+          .finally(() => {
+            _queued = null;
+          });
+      }
+      return _queued;
+    }
+    _inflight = _reloadOnce(opts).finally(() => {
+      _inflight = null;
+    });
+    return _inflight;
+  }
+
+  async function _reloadOnce({ origin = 'reload' } = {}) {
     const t0 = Date.now();
     const layers = await _composeLayers();
     const { values: resolved, origins } = precedence.resolve(layers);
@@ -151,8 +248,14 @@ function createConfigService(deps = {}) {
     const version = current.version + 1;
     const at = clock();
 
-    current = { values: effective, origins, version, at };
-    if (cache) cache.set({ values: effective, origins, version });
+    // Build the next snapshot fully, deep-freeze it, then swap in ONE assignment
+    // (atomic in the single-threaded runtime) so readers never see a half-built
+    // snapshot and activated values can never be mutated after the fact.
+    const next = _deepFreeze({ values: { ...effective }, origins: { ...origins }, version, at });
+    current = next;
+    if (cache) cache.set({ values: next.values, origins: next.origins, version });
+    _history.push(next);
+    if (_history.length > historyLimit) _history.shift();
 
     // Notify subscribers + publish events (redacted) for each changed key.
     for (const ch of changed) {
@@ -266,6 +369,62 @@ function createConfigService(deps = {}) {
     return current.version;
   }
 
+  // ── production hardening: history, integrity, diagnostics (all additive) ────
+
+  /** Whether a caller's cached version is stale relative to the active one. */
+  function isStale(v) {
+    return v !== current.version;
+  }
+
+  /** Redacted metadata for each retained snapshot (newest last). */
+  function history() {
+    return _history.map((s) => ({
+      version: s.version,
+      at: s.at,
+      keys: Object.keys(s.values).length,
+    }));
+  }
+
+  /** Retrieve a retained snapshot by version (redacted), or null if evicted. */
+  function snapshotAt(v) {
+    const s = _history.find((x) => x.version === v);
+    if (!s) return null;
+    return Object.freeze({
+      values: Object.freeze(redaction.redact(s.values, redactionPatterns)),
+      origins: s.origins,
+      version: s.version,
+      at: s.at,
+    });
+  }
+
+  /** Verify the cache agrees with the active snapshot (consistency check). */
+  function verifyCache() {
+    if (!cache) return { ok: true, reason: 'no-cache' };
+    const cacheVersion = cache.version();
+    const ok = cacheVersion === current.version;
+    return { ok, cacheVersion, currentVersion: current.version };
+  }
+
+  /** Structured diagnostics for health checks / observability dashboards. */
+  function diagnostics() {
+    return {
+      version: current.version,
+      at: current.at,
+      keys: Object.keys(current.values).length,
+      providers: providers.map((p) => ({
+        name: p.name,
+        layer: p.layer,
+        lastKnownGood: _lastGood.has(p.name),
+      })),
+      subscribers: _subscriberCount(),
+      historyDepth: _history.length,
+      reloadInFlight: Boolean(_inflight),
+      reloadQueued: Boolean(_queued),
+      cache: verifyCache(),
+      metrics: metrics ? metrics.snapshot() : null,
+    };
+  }
+
   // ── override + provider management (runtime tier, §3) ──────────────────────
   function setOverride(scope, key, value) {
     if (!overrides[scope]) throw new Error(`config: unknown override scope "${scope}"`);
@@ -308,6 +467,12 @@ function createConfigService(deps = {}) {
     clearOverride,
     addProvider,
     dispose,
+    // production hardening (additive)
+    isStale,
+    history,
+    snapshotAt,
+    verifyCache,
+    diagnostics,
     // introspection
     metrics: () => (metrics ? metrics.snapshot() : null),
   };

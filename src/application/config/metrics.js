@@ -19,6 +19,7 @@ function createConfigMetrics(opts = {}) {
   let cacheMisses = 0;
   let subscriberCount = 0;
   let watchNotifications = 0;
+  let providerErrors = 0;
 
   function recordProviderLatency(name, ms) {
     const e = providerLatency.get(name) || { count: 0, totalMs: 0, lastMs: 0 };
@@ -44,6 +45,7 @@ function createConfigMetrics(opts = {}) {
     lastReloadMs = ms;
   }
   const recordValidationFailure = () => (validationFailures += 1);
+  const recordProviderError = () => (providerErrors += 1);
   const recordCache = (hit) => (hit ? (cacheHits += 1) : (cacheMisses += 1));
   const setSubscriberCount = (n) => (subscriberCount = n);
   const recordWatchNotification = () => (watchNotifications += 1);
@@ -66,6 +68,7 @@ function createConfigMetrics(opts = {}) {
       cacheMissRatio: cacheTotal ? cacheMisses / cacheTotal : 0,
       subscriberCount,
       watchNotifications,
+      providerErrors,
     };
   }
 
@@ -91,6 +94,7 @@ function createConfigMetrics(opts = {}) {
     g('config_cache_miss_ratio', 'Cache miss ratio', s.cacheMissRatio);
     g('config_subscribers', 'Active watch subscribers', s.subscriberCount);
     g('config_watch_notifications_total', 'Watch notifications delivered', s.watchNotifications);
+    g('config_provider_errors_total', 'Provider load errors/timeouts', s.providerErrors);
     return lines.join('\n') + '\n';
   }
 
@@ -99,6 +103,7 @@ function createConfigMetrics(opts = {}) {
     timeProvider,
     recordReload,
     recordValidationFailure,
+    recordProviderError,
     recordCache,
     setSubscriberCount,
     recordWatchNotification,

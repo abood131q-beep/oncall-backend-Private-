@@ -41,6 +41,8 @@ function createConfigurationPlatform(deps = {}) {
     clock: deps.clock,
     logger: deps.logger,
     redactionPatterns: deps.redactionPatterns,
+    providerTimeoutMs: deps.providerTimeoutMs,
+    historyLimit: deps.historyLimit,
   });
 
   return {
