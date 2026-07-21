@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    KERNELS["Kernel Services (Gateway/Discovery/Jobs/…)\nhand a protected fn to execute()"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph RK["Resilience Kernel Service — ADR-036"]
+    SERVICE["resilienceService\nregisterPolicy/execute/evaluate\nreset/verify/health"]
+    BULK["bulkhead (in-flight limit)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped resilience() port\nresilience:execute · resilience:read"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    POL["policy (thresholds + backoff + checksum)"]
+    CIRC["circuit (state machine)"]
+    CLS["classify (retriable?)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (policies + state only)"]
+    MEM["memory"]
+    FUT["extension points:\nredis · postgresql · storage · mongodb · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  OBS["Observability (ADR-033)\nconsumes metrics/events"]
+  AUDIT["Audit (ADR-026)\nrecords resilience events"]
+
+  KERNELS -->|execute fn| SERVICE
+  EXT -->|this.resilience| ADAPTER --> SERVICE
+  SERVICE --> BULK
+  SERVICE --> CIRC
+  SERVICE --> CLS
+  SERVICE --> POL
+  SERVICE --> Providers
+  SERVICE -->|Policy/Execution/Circuit/Fallback/Recovery events| BACKBONE
+  BACKBONE -.-> AUDIT
+  BACKBONE -.-> OBS
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,BULK,METRICS,ADAPTER kernel;

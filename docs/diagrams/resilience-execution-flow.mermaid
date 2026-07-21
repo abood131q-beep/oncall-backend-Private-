@@ -1,0 +1,33 @@
+flowchart TD
+  START([execute policyId + fn + fallback?]) --> RESOLVE[resolve policy + checksum integrity]
+  RESOLVE --> BULK{bulkhead slot?}
+  BULK -->|full| BFB{fallback?}
+  BFB -->|yes| FB[FallbackExecuted · return fallback]
+  BFB -->|no| BERR[throw BulkheadFullError]
+  BULK -->|slot| ACQ[active++ · ExecutionStarted]
+
+  ACQ --> GATE{circuit canAttempt?}
+  GATE -->|open → half_open| HALF[save state · CircuitHalfOpened]
+  HALF --> ATTEMPT
+  GATE -->|open, window not elapsed| CFB{fallback?}
+  CFB -->|yes| FB
+  CFB -->|no| CERR[throw CircuitOpenError]
+  GATE -->|closed / half_open| ATTEMPT[attempt loop 1..maxAttempts]
+
+  ATTEMPT --> RUN[run fn with timeout]
+  RUN --> OK{resolved in time?}
+  OK -->|yes| SUCCESS[commit onSuccess\nhalf_open→closed → CircuitClosed + RecoveryCompleted\nExecutionSucceeded]
+  OK -->|threw / timeout| CLS{classify retriable?}
+  CLS -->|retriable & attempts left| RETRY[retryAttempts++ · backoff computed]
+  RETRY --> ATTEMPT
+  CLS -->|no more / non-retriable| FAIL[commit onFailure\nclosed→open at threshold → CircuitOpened\nExecutionFailed]
+
+  FAIL --> FFB{fallback?}
+  FFB -->|yes| FB
+  FFB -->|no| THROW[throw lastError]
+
+  SUCCESS --> DONE([active-- · result])
+  FB --> DONE
+  THROW --> DONE
+  CERR --> DONE
+  BERR --> DONE
