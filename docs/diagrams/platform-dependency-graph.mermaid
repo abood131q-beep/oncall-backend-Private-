@@ -1,0 +1,77 @@
+flowchart TD
+  backbone["event-backbone (016)"]
+  config["config (019)"]
+  storage["storage (021)"]
+  lock["lock (022)"]
+  identity["identity (027)"]
+  policy["policy (025)"]
+  features["features (029)"]
+  messaging["messaging (024)"]
+  workflow["workflow (023)"]
+  audit["audit (026)"]
+  scheduler["scheduler (020)"]
+  secrets["secrets (028)"]
+  notifications["notifications (030)"]
+  ratelimit["ratelimit (031)"]
+  jobs["jobs (032)"]
+  observability["observability (033)"]
+  discovery["discovery (034)"]
+  gateway["gateway (035)"]
+  resilience["resilience (036)"]
+  mesh["mesh (037)"]
+  tenancy["tenancy (038)"]
+  resources["resources (039)"]
+  lifecycle["lifecycle (040)"]
+  compatibility["compatibility (041)"]
+  extensions["extensions (017)"]
+
+  backbone --> config
+  config --> storage
+  config --> lock
+  config --> identity
+  storage --> identity
+  config --> policy
+  identity --> policy
+  config --> features
+  storage --> features
+  config --> messaging
+  config --> workflow
+  messaging --> workflow
+  lock --> workflow
+  storage --> workflow
+  config --> audit
+  storage --> audit
+  config --> scheduler
+  lock --> scheduler
+  config --> secrets
+  storage --> secrets
+  config --> notifications
+  messaging --> notifications
+  config --> ratelimit
+  config --> jobs
+  scheduler --> jobs
+  config --> observability
+  config --> discovery
+  config --> resilience
+  config --> tenancy
+  identity --> tenancy
+  config --> resources
+  config --> lifecycle
+  config --> compatibility
+  config --> extensions
+  policy --> extensions
+
+  %% port-injection edges (dependency service injected as `ports`)
+  identity -. port .-> gateway
+  policy -. port .-> gateway
+  ratelimit -. port .-> gateway
+  features -. port .-> gateway
+  discovery -. port .-> gateway
+  identity -. port .-> mesh
+  policy -. port .-> mesh
+  resilience -. port .-> mesh
+  ratelimit -. port .-> mesh
+  discovery -. port .-> mesh
+
+  classDef edge fill:#eef,stroke:#66a;
+  class gateway,mesh edge;

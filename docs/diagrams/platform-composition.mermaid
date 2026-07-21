@@ -1,0 +1,39 @@
+flowchart TB
+  subgraph Consumers["Applications / Extensions (ADR-018 SDK)"]
+    APP["Application services"]
+    EXT["Extensions"]
+  end
+
+  subgraph Root["Enterprise Platform Composition Root — ADR-042 (src/platform)"]
+    BUILDER["platformBuilder\ncreatePlatform(options)\nKERNELS catalog"]
+    CTX["platformContext (immutable)\nclock·logger·metrics·config·publisher\nmutex·version·environment·health·shared"]
+    REG["kernelRegistry\nregister/resolve/list/verify"]
+    GRAPH["dependencyGraph\nvalidate + topo order"]
+    HEALTH["platformHealth\naggregate()"]
+    API["Platform API\nstart·shutdown·health·verify\ngetKernel·listKernels·version"]
+  end
+
+  subgraph Kernels["Enterprise Kernels (ADR-016 … ADR-041) — independent"]
+    BACKBONE["event-backbone (016)"]
+    CONFIG["config (019)"]
+    CORE["storage·lock·identity·policy·features\nmessaging·workflow·audit·scheduler·secrets"]
+    OPS["notifications·ratelimit·jobs·observability\ndiscovery·resilience·tenancy·resources"]
+    EDGE["gateway (035)  ·  mesh (037)"]
+    GOV["lifecycle (040)  ·  compatibility (041)  ·  extensions (017)"]
+  end
+
+  APP --> API
+  EXT --> API
+  BUILDER --> CTX
+  BUILDER --> REG
+  REG --> GRAPH
+  GRAPH --> BUILDER
+  BUILDER -->|create*Platform(deps) via DI| Kernels
+  CTX -.->|scopeFor(needs)| Kernels
+  EDGE -.->|injected ports: identity/policy/ratelimit/features/discovery/resilience| CORE
+  API -->|start/shutdown delegated| GOV
+  HEALTH -.->|health() per kernel| Kernels
+  API --> HEALTH
+
+  classDef root fill:#eef,stroke:#66a;
+  class BUILDER,CTX,REG,GRAPH,HEALTH,API root;
