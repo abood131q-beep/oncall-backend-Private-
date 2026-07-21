@@ -1,0 +1,31 @@
+flowchart TD
+  START([allocate resourceId + amount + owner + priority]) --> AMT{amount > 0?}
+  AMT -->|no| VERR[throw ResourceValidationError]
+  AMT -->|yes| LOCK[lock resource]
+  LOCK --> RESOLVE[resolve resource + checksum integrity]
+  RESOLVE -->|missing| NF[throw ResourceNotFoundError]
+  RESOLVE --> QUOTA{quota set?}
+
+  QUOTA -->|owner used + amount > quota| QX[record quota violation\nQuotaExceeded · throw QuotaExceededError]
+  QUOTA -->|ok / none| CAP{canAllocate?\nallocated + amount <= capacity - reservation}
+
+  CAP -->|yes| GRANT
+  CAP -->|no| PRE[preempt strictly-lower-priority allocations\nlowest priority, then oldest]
+  PRE --> PROOM{room now?}
+  PROOM -->|yes → each preempted| REL[release victim · ResourceReleased preempted=true]
+  REL --> GRANT[create allocation · applyAllocate]
+  PROOM -->|no| CONF[record conflict\nthrow ResourceConflictError]
+
+  GRANT --> PERSIST[persist allocation + resource\nupdate accounting stats]
+  PERSIST --> EMIT[record allocation + latency\nResourceAllocated]
+  EMIT --> END([allocation record + available])
+
+  subgraph RELEASE[release allocationId]
+    R1[load active allocation] --> R2[status = released · applyRelease amount]
+    R2 --> R3[persist allocation + resource\nResourceReleased]
+  end
+
+  subgraph VERIFY[verify]
+    V1[recompute resource checksums] --> V2[allocated == sum active allocations?]
+    V2 --> V3[issues[] + ResourceVerified]
+  end

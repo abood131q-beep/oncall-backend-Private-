@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph RK["Resource Management Kernel Service — ADR-039"]
+    SERVICE["resourcesService\nregisterResource/allocate/release\nquery/verify/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped resources() port\nresource:read · resource:allocate"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    RES["resource (capacity math + checksum)"]
+    ALC["allocation (claim + checksum)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (defs + allocation state only)"]
+    MEM["memory"]
+    FUT["extension points:\npostgresql · storage · redis · mongodb · cloud-registry · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  TEN["Multi-Tenancy (ADR-038)\nscopes resources/quotas"]
+  LOCK["Lock Platform (ADR-022)\nguards distributed allocation"]
+  OBS["Observability (ADR-033)\nconsumes utilization"]
+  AUDIT["Audit (ADR-026)\nrecords resource events"]
+
+  SVC --> SERVICE
+  EXT -->|this.resources| ADAPTER --> SERVICE
+  SERVICE --> RES
+  SERVICE --> ALC
+  SERVICE --> Providers
+  TEN -.->|tenant scope| SERVICE
+  LOCK -.->|guard| SERVICE
+  SERVICE -->|Registered/Allocated/Released/QuotaExceeded/Updated/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  BACKBONE -.-> OBS
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,METRICS,ADAPTER kernel;
