@@ -1,0 +1,73 @@
+{
+  "phase": "20.b",
+  "generatedAt": "2026-07-21T18:10:41.047Z",
+  "environment": {
+    "sqlite": false,
+    "liveServer": false,
+    "note": "pure surface measured; DB/HTTP/socket categories are CI-only"
+  },
+  "overallParityPct": 100,
+  "comparisons": 25,
+  "matches": 25,
+  "mismatches": 0,
+  "verificationFailures": 0,
+  "confidenceLevel": 1,
+  "coveragePct": 100,
+  "latency": {
+    "samples": 25,
+    "avgMs": 0.04,
+    "maxMs": 1
+  },
+  "perCategory": {
+    "jwt": {
+      "comparisons": 16,
+      "matches": 16,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": 100
+    },
+    "authz": {
+      "comparisons": 4,
+      "matches": 4,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": 100
+    },
+    "otp": {
+      "comparisons": 1,
+      "matches": 1,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": 100
+    },
+    "principal": {
+      "comparisons": 4,
+      "matches": 4,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": 100
+    },
+    "refresh": {
+      "comparisons": 0,
+      "matches": 0,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": null
+    },
+    "repository": {
+      "comparisons": 0,
+      "matches": 0,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": null
+    },
+    "socket": {
+      "comparisons": 0,
+      "matches": 0,
+      "mismatches": 0,
+      "failures": 0,
+      "parityPct": null
+    }
+  },
+  "mismatchReport": []
+}

@@ -1,0 +1,71 @@
+{
+  "gate": "ADR-047 Gate B2 — Proven Identity token parity",
+  "phase": "20.b",
+  "generatedAt": "2026-07-21T18:10:47.287Z",
+  "measured": {
+    "pureParity": true,
+    "socketParity": true,
+    "httpAndRefreshRevocation": true,
+    "rollbackSafety": true,
+    "crossReplica": false
+  },
+  "criteria": [
+    {
+      "id": "B2.1-token-claims-byte-identical",
+      "description": "Byte-identical tokens/claims + identical verify/revocation decisions across a full A/B run.",
+      "evidence": {
+        "pureParity": {
+          "source": "identity-parity-report.mjs",
+          "status": "PASS",
+          "detail": "Result: PASS — pure-surface parity 100%"
+        },
+        "httpLifecycle": {
+          "source": "identity-http-ab.mjs",
+          "status": "PASS",
+          "detail": "Result: IDENTICAL — identity HTTP + refresh/revocation byte-identical with shadow OFF vs ON",
+          "note": "full login/verify/is-admin/refresh-rotation/replay/logout/logout-all, shadow OFF vs ON, byte-identical"
+        },
+        "refreshRevocationRepository": {
+          "source": "identity-db-parity.mjs",
+          "status": "PASS",
+          "detail": "Result: PASS — refresh/revocation/repository parity 100% (real comparisons)",
+          "note": "REAL legacy-vs-kernel comparisons over a live DB: refresh verify (valid/rotated/revoked) + repository reads — 100% parity, coverage > 0 (closes the declared-but-unexercised gap)"
+        }
+      },
+      "status": "MET"
+    },
+    {
+      "id": "B2.socket-decision-parity",
+      "description": "Socket authentication decisions identical with shadow OFF vs ON.",
+      "evidence": {
+        "source": "identity-socket-ab.mjs",
+        "detail": "Result: IDENTICAL — socket auth decisions byte-identical with shadow OFF vs ON"
+      },
+      "status": "MET"
+    },
+    {
+      "id": "B2.2-cross-replica-revocation-timing",
+      "description": "Cross-replica revocation timing matches the current Redis-backed behavior.",
+      "status": "UNAVAILABLE",
+      "detail": "Result: SKIPPED (set REDIS_URL in CI-with-Redis / staging to produce B2.2 evidence).",
+      "reason": "requires ≥2 replicas + Redis (REDIS_URL). Skip-clean without it.",
+      "producedBy": "REDIS_URL=… node tests/integration/identity-cross-replica-revocation.mjs (staging)"
+    },
+    {
+      "id": "B2.3-staged-rollback-no-reauth",
+      "description": "A staged rollback restores legacy authoritative with no client re-auth.",
+      "status": "PARTIAL",
+      "detail": "Result: PASS — rollback-safety invariant holds (no client re-auth)",
+      "note": "rollback-SAFETY invariant MEASURED PASS (a session minted before the flag flip stays valid after). Full authoritative-flag rollback completes in Phase 20.c when IDENTITY_AUTHORITATIVE is wired.",
+      "producedBy": "scripts/identity-rollback-drill.mjs"
+    }
+  ],
+  "summary": {
+    "met": 2,
+    "partial": 1,
+    "unavailable": 1,
+    "failed": 0,
+    "total": 4
+  },
+  "verdict": "SUBSTANTIALLY MET — token/claims + HTTP + refresh/revocation + socket MEASURED PASS; rollback-safety MEASURED PASS (B2.3 PARTIAL — authoritative-flag rollback in 20.c). 1 criterion (cross-replica timing) UNAVAILABLE here (needs Redis/staging). Gate B2 is NOT fully MET; do NOT promote until the remaining evidence is produced in staging."
+}

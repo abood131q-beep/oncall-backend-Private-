@@ -13,8 +13,8 @@
  */
 
 const logger = require('../utils/logger');
-// P6-05B: read key from env.js (single source of truth)
-const { GOOGLE_MAPS_API_KEY } = require('../config/env');
+// P6-05B / Phase 18.3: read key via the runtime config facade (single approved config-read seam).
+const config = require('../config');
 
 const MAPS_BASE = 'https://maps.googleapis.com/maps/api/place';
 const DEFAULT_LOCATION = 'location=29.3759,47.9774&radius=50000';
@@ -29,7 +29,7 @@ const DEFAULT_LOCATION = 'location=29.3759,47.9774&radius=50000';
 async function getPlacesAutocomplete(input, lat, lng) {
   if (!input) return { predictions: [] };
 
-  const apiKey = GOOGLE_MAPS_API_KEY;
+  const apiKey = config.get('GOOGLE_MAPS_API_KEY');
   if (!apiKey) {
     logger.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — autocomplete disabled');
     return { predictions: [] };
@@ -70,7 +70,7 @@ async function getPlacesAutocomplete(input, lat, lng) {
 async function getPlaceDetails(placeId) {
   if (!placeId) return { result: null };
 
-  const apiKey = GOOGLE_MAPS_API_KEY;
+  const apiKey = config.get('GOOGLE_MAPS_API_KEY');
   if (!apiKey) {
     logger.warn('[PlacesService] GOOGLE_MAPS_API_KEY not set — details disabled');
     return { result: null };

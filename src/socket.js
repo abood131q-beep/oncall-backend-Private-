@@ -51,6 +51,17 @@ function setupSocket(io, svc) {
       return next(new Error('Invalid or expired token'));
     }
 
+    // Phase 20.b: observational identity shadow (present only when SHADOW_IDENTITY=1).
+    // It compares the handshake auth decision legacy-vs-kernel and NEVER affects the outcome.
+    if (svc.identityShadow) {
+      try {
+        svc.identityShadow.shadowVerify(token, { requestId: socket.id });
+        svc.identityShadow.shadowResolvePrincipal(payload, { requestId: socket.id });
+      } catch {
+        /* shadow must never affect the handshake */
+      }
+    }
+
     socket.data.user = payload;
     next();
   });

@@ -24,11 +24,10 @@
 const crypto = require('crypto');
 const https = require('https');
 
-// P6-05B: Service account parsed once at startup by env.js (single source of truth)
-const {
-  FIREBASE_SERVICE_ACCOUNT,
-  FIREBASE_PROJECT_ID: _DEFAULT_PROJECT_ID,
-} = require('../config/env');
+// P6-05B / Phase 18.4: service account read via the runtime config facade (single config-read seam).
+const config = require('../config');
+const FIREBASE_SERVICE_ACCOUNT = config.get('FIREBASE_SERVICE_ACCOUNT');
+const _DEFAULT_PROJECT_ID = config.get('FIREBASE_PROJECT_ID');
 
 // ─── OAuth2 Token Cache ───────────────────────────────────────────────────────
 // نخزّن الـ access token حتى 55 دقيقة (Google يُصدره لمدة 60 دق)

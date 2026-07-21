@@ -1,0 +1,31 @@
+{
+  "phase": "20.b-cont",
+  "generatedAt": "2026-07-21T18:29:39.453Z",
+  "surface": "refresh + refresh-revocation + access-token-revocation + repository (real sqlite DB)",
+  "jwt": {
+    "comparisons": 2,
+    "matches": 2,
+    "mismatches": 0,
+    "failures": 0,
+    "parityPct": 100
+  },
+  "refresh": {
+    "comparisons": 5,
+    "matches": 5,
+    "mismatches": 0,
+    "failures": 0,
+    "parityPct": 100
+  },
+  "repository": {
+    "comparisons": 4,
+    "matches": 4,
+    "mismatches": 0,
+    "failures": 0,
+    "parityPct": 100
+  },
+  "mismatches": 0,
+  "verificationFailures": 0,
+  "jwtParityPct": 100,
+  "refreshParityPct": 100,
+  "repositoryParityPct": 100
+}

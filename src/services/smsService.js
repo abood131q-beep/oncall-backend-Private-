@@ -24,13 +24,13 @@
  */
 
 const https = require('https');
-const {
-  SMS_PROVIDER,
-  SMS_API_KEY,
-  SMS_FROM,
-  SMS_ACCOUNT_SID,
-  IS_PRODUCTION,
-} = require('../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../config');
+const SMS_PROVIDER = config.get('SMS_PROVIDER');
+const SMS_API_KEY = config.get('SMS_API_KEY');
+const SMS_FROM = config.get('SMS_FROM');
+const SMS_ACCOUNT_SID = config.get('SMS_ACCOUNT_SID');
+const IS_PRODUCTION = config.get('IS_PRODUCTION');
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 

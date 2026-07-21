@@ -12,7 +12,10 @@
  */
 
 const crypto = require('crypto');
-const { JWT_SECRET, ADMIN_PHONES } = require('../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../config');
+const JWT_SECRET = config.get('JWT_SECRET');
+const ADMIN_PHONES = config.get('ADMIN_PHONES');
 // P6-03: Security logging
 const logger = require('../utils/logger');
 

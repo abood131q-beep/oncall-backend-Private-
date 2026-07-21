@@ -145,6 +145,71 @@ for (const f of layerFiles.application) {
   }
 }
 
+// R8 — Configuration read seam (Phase 18.3). Application code must read config ONLY through the
+// runtime facade `src/config/index.js` (config.get/require). No NEW module may import
+// `src/config/env.js` directly. [MAJOR, ADR-046/G1.0 — config-seam invariant]
+//
+// This is a RATCHET: the LEGACY_ALLOWLIST holds the pre-facade consumers not yet migrated; it may
+// only SHRINK. EXEMPT holds files that legitimately read env.js by design (the facade itself, the
+// env module, and the Configuration shadow's authoritative legacy source).
+{
+  const EXEMPT = new Set([
+    'src/config/env.js', // the source module itself
+    'src/config/index.js', // the facade — the ONE approved backing point
+    'src/platform-adapters/configuration/legacySource.js', // shadow's legacy source-of-truth (by design)
+  ]);
+  // Phase 18.4: migration COMPLETE — allowlist is empty. No runtime consumer of env.js remains.
+  // Only the EXEMPT files above may read env.js. Any direct import is now a hard R8 violation.
+  const LEGACY_ALLOWLIST = new Set([]);
+  const DIRECT_ENV = /require\(['"][^'"]*config\/env['"]\)/;
+  const scan = [...walk(join(ROOT, 'src')), join(ROOT, 'server.js')];
+  for (const f of scan) {
+    const rf = rel(f);
+    if (EXEMPT.has(rf)) continue;
+    if (!DIRECT_ENV.test(codeOf(f))) continue;
+    if (LEGACY_ALLOWLIST.has(rf)) continue; // permitted legacy consumer (pending migration)
+    record('R8-config-read-seam', 'MAJOR', 'ADR-046', f, 'reads config/env directly — use the config facade (config.get/require)');
+  }
+}
+
+// R9 — Edge-layer purity (Phase 20.b-cont). `src/middleware/` and `src/services/` are NOT among the
+// four ADR-005 layers the gate scans (R1–R7), so raw SQL and token crypto have historically hidden
+// there (Phase 19.1 V1/V2 — the "governance blind spot"). R9 closes it: no NEW raw SQL and no NEW
+// token-signing crypto (HMAC) may live in these edge folders; they belong in `infrastructure/` and
+// the Identity kernel. [MAJOR, ADR-005/ADR-049]
+//
+// RATCHET: the allowlists hold the pre-existing debt (documented in Phase 19.1) and may only SHRINK
+// as each responsibility is migrated into the kernel. Any file NOT on the allowlist that introduces
+// SQL / HMAC in these folders is a hard violation.
+{
+  const EDGE_DIRS = [join(ROOT, 'src', 'middleware'), join(ROOT, 'src', 'services')];
+  // Existing raw-SQL debt in the edge layers (Phase 19.1). Shrinks as migrated.
+  const SQL_ALLOWLIST = new Set([
+    'src/middleware/auth.js', // JWT refresh + revocation SQL (19.1 V2 — → Identity infrastructure)
+    'src/middleware/rateLimiter.js', // rate-limit locks SQL (→ infrastructure)
+    'src/services/otpService.js', // OTP store SQL (→ Identity infrastructure)
+    'src/services/driverMatcher.js',
+    'src/services/analytics.js',
+    'src/services/notificationService.js',
+  ]);
+  // Existing token-crypto debt (Phase 19.1 V1). Shrinks as the JWT core moves into the kernel.
+  const CRYPTO_ALLOWLIST = new Set([
+    'src/middleware/auth.js', // hand-rolled HS256 JWT signing (→ Identity infrastructure token crypto)
+  ]);
+  const HMAC = /\bcreateHmac\s*\(/;
+  const edgeFiles = EDGE_DIRS.flatMap((d) => walk(d));
+  for (const f of edgeFiles) {
+    const rf = rel(f);
+    const code = codeOf(f);
+    if (SQL.test(code) && !SQL_ALLOWLIST.has(rf)) {
+      record('R9-no-sql-in-edge', 'MAJOR', 'ADR-005', f, 'raw SQL in middleware/services — belongs in infrastructure/');
+    }
+    if (HMAC.test(code) && !CRYPTO_ALLOWLIST.has(rf)) {
+      record('R9-no-token-crypto-in-edge', 'MAJOR', 'ADR-049', f, 'token-signing crypto (HMAC) in middleware/services — belongs in the Identity kernel');
+    }
+  }
+}
+
 // ── Report ────────────────────────────────────────────────────────────────────
 const asJson = process.argv.includes('--json');
 const crit = violations.filter((v) => v.severity === 'CRITICAL');
@@ -158,7 +223,7 @@ if (asJson) {
   console.log(`Enterprise-layer files scanned: ${all.length}`);
   for (const l of LAYERS) console.log(`  ${l.padEnd(15)} ${layerFiles[l].length}`);
   console.log('-'.repeat(58));
-  const RULES = ['R1-no-framework-in-core', 'R2-no-sql-outside-infra', 'R3-presentation-no-domain', 'R3-controller-no-infra-db', 'R4-domain-pure', 'R5-application-downward-only', 'R6-no-cycles', 'R7-ports-asserted'];
+  const RULES = ['R1-no-framework-in-core', 'R2-no-sql-outside-infra', 'R3-presentation-no-domain', 'R3-controller-no-infra-db', 'R4-domain-pure', 'R5-application-downward-only', 'R6-no-cycles', 'R7-ports-asserted', 'R8-config-read-seam', 'R9-no-sql-in-edge', 'R9-no-token-crypto-in-edge'];
   for (const r of RULES) {
     const hits = violations.filter((v) => v.rule === r);
     console.log(`  ${hits.length === 0 ? '✔ PASS' : '✗ FAIL'}  ${r}${hits.length ? '  (' + hits.length + ')' : ''}`);

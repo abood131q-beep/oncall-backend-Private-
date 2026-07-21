@@ -307,10 +307,44 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Enterprise shadow parity gate (sqlite-free, runs anywhere)
+        run: npm run verify:shadow
       - name: Run ALL A/B compatibility harnesses (byte-identical or fail)
         run: npm run test:ab
+      - name: Identity Gate B2 evidence (parity + socket + HTTP/refresh/revocation)
+        run: npm run identity:gate-b2
+      - name: Upload Identity Gate B2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-gate-b2-evidence-${{ github.run_number }}
+          path: architecture/phase-20.b/evidence/
       - name: Unit coverage report
         run: npm run test:coverage || true
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PostgreSQL Cross-Engine Gate (P0-1) — proves the PG live path is
+  # byte-identical to SQLite. Provisions a throwaway Postgres (Docker),
+  # applies PG migrations, runs unit tests + the SQLite≡PostgreSQL A/B.
+  # ─────────────────────────────────────────────────────────────────────
+  postgres:
+    name: PostgreSQL Cross-Engine A/B
+    runs-on: ubuntu-latest
+    needs: architecture
+    env:
+      JWT_SECRET: ci-pg-secret-0123456789abcdef0123456789abcdef
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: PostgreSQL live-path verification (migrations + SQLite≡PostgreSQL A/B)
+        run: bash scripts/verify-postgres.sh
 
   # ─────────────────────────────────────────────────────────────────────
   # Summary — يظهر في GitHub PR checks
@@ -318,7 +352,7 @@ jobs:
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [security, lint, test, mcp-test, architecture, build, ab-compat]
+    needs: [security, lint, test, mcp-test, architecture, build, ab-compat, postgres]
     if: always()
     steps:
       - name: Check all jobs
@@ -338,6 +372,8 @@ jobs:
              [ "${{ needs.mcp-test.result }}" != "success" ] || \
              [ "${{ needs.architecture.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.ab-compat.result }}" != "success" ] || \
+             [ "${{ needs.postgres.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "❌ CI Failed"
             exit 1

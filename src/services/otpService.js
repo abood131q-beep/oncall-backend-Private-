@@ -26,7 +26,8 @@
 
 const crypto = require('crypto');
 const smsService = require('./smsService');
-const { SMS_PROVIDER } = require('../config/env');
+// Phase 18.3: read via the runtime config facade (single approved config-read seam).
+const config = require('../config');
 
 const OTP_EXPIRY_SECONDS = 5 * 60; // 5 دقائق
 const OTP_MAX_ATTEMPTS = 3;
@@ -82,7 +83,7 @@ async function sendOTP(phone, dbRun, logger, ctx = {}) {
   // P6-04D: Security log — يُسجَّل بعد نجاح الإرسال فقط
   logger.security('OTP_SENT', {
     maskedPhone: maskPhone(phone),
-    provider: ctx.provider || SMS_PROVIDER,
+    provider: ctx.provider || config.get('SMS_PROVIDER'),
     requestId: ctx.requestId,
     timestamp: new Date().toISOString(),
     expiresInSec: OTP_EXPIRY_SECONDS,
@@ -109,7 +110,7 @@ async function verifyOTP(phone, code, dbGet, dbRun, ctx = {}) {
   // الحقول المشتركة لجميع Security Events
   const logCtx = {
     maskedPhone,
-    provider: provider || SMS_PROVIDER,
+    provider: provider || config.get('SMS_PROVIDER'),
     requestId,
     timestamp: new Date().toISOString(),
   };

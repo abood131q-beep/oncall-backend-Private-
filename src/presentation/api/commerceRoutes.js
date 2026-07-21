@@ -27,7 +27,9 @@
  */
 
 const express = require('express');
-const { PAYMENT_ENABLED } = require('../../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../../config');
+const PAYMENT_ENABLED = config.get('PAYMENT_ENABLED');
 
 const { createCommerceApplication } = require('../../application/commerce');
 const {

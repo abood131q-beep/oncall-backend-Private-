@@ -4,8 +4,11 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { getAnalytics } = require('../services/analytics');
-// P6-05B: read system vars from env.js instead of process.env directly
-const { NODE_ENV, PORT, TZ } = require('../config/env');
+// P6-05B / Phase 18.4: read system vars via the runtime config facade (single config-read seam).
+const config = require('../config');
+const NODE_ENV = config.get('NODE_ENV');
+const PORT = config.get('PORT');
+const TZ = config.get('TZ');
 
 module.exports = function createAdminRouter(svc) {
   const router = express.Router();

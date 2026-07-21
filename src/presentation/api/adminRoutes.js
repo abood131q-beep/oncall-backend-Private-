@@ -22,7 +22,11 @@
  */
 
 const express = require('express');
-const { NODE_ENV, PORT, TZ } = require('../../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../../config');
+const NODE_ENV = config.get('NODE_ENV');
+const PORT = config.get('PORT');
+const TZ = config.get('TZ');
 
 const { createAdminApplication } = require('../../application/admin');
 const {

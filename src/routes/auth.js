@@ -1,7 +1,10 @@
 'use strict';
 
 const express = require('express');
-const { REQUIRE_OTP, SMS_PROVIDER } = require('../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../config');
+const REQUIRE_OTP = config.get('REQUIRE_OTP');
+const SMS_PROVIDER = config.get('SMS_PROVIDER');
 const { sendOTP, verifyOTP } = require('../services/otpService');
 
 module.exports = function createAuthRouter(svc) {

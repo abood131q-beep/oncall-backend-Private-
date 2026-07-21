@@ -22,10 +22,15 @@ const cors = require('cors');
 // P6-05B: CORS origins sourced from env.js (single source of truth).
 // ALLOWED_ORIGINS = production domains (e.g. https://admin.oncall.app).
 // Localhost regexes are always included for development compatibility.
-const { ALLOWED_ORIGINS } = require('../config/env');
+// Phase 18.3: read via the runtime config facade (single approved config-read seam).
+const config = require('../config');
 
 const CORS_OPTIONS = {
-  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, ...ALLOWED_ORIGINS],
+  origin: [
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/,
+    ...config.get('ALLOWED_ORIGINS'),
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token'],
   credentials: true,

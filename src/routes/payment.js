@@ -8,7 +8,9 @@ const express = require('express');
 //   1. أضف منطق الـ gateway في handler.
 //   2. اضبط PAYMENT_ENABLED=true في .env.
 // المسار المستقبلي: payment intent → webhook → credit wallet (لا تضيف مباشرة).
-const { PAYMENT_ENABLED } = require('../config/env');
+// Phase 18.4: config read via the runtime facade (single approved config-read seam).
+const config = require('../config');
+const PAYMENT_ENABLED = config.get('PAYMENT_ENABLED');
 
 const PAYMENT_METHODS = {
   cash: { id: 'cash', name: 'نقداً', icon: '💵', available: true },
