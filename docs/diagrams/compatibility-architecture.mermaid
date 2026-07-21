@@ -1,0 +1,46 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    KSVC["Kernel Services / platform"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph CK["Compatibility Kernel Service — ADR-041"]
+    SERVICE["compatibilityService\nregisterContract/evaluate/negotiate\ndeprecate/verify/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped compatibility() port\ncompatibility:read · compatibility:verify"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    CTR["contract (definition + checksum)"]
+    EVAL["compatibility (evaluate · resolveVersion · negotiate)"]
+    SEMVER["semver (reused primitive)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (metadata only)"]
+    MEM["memory"]
+    FUT["extension points:\npostgresql · storage · redis · mongodb · cloud-registry · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  DISC["Discovery (ADR-034)\nversion-aware lookup"]
+  GW["API Gateway (ADR-035)\nversion-aware routing"]
+  OBS["Observability (ADR-033)\nconsumes eval metrics"]
+  AUDIT["Audit (ADR-026)\nrecords deprecation governance"]
+
+  KSVC --> SERVICE
+  EXT -->|this.compatibility| ADAPTER --> SERVICE
+  SERVICE --> EVAL
+  EVAL --> SEMVER
+  SERVICE --> CTR
+  SERVICE --> Providers
+  DISC -.->|consult| SERVICE
+  GW -.->|consult| SERVICE
+  SERVICE -->|ContractRegistered/CompatibilityVerified/CapabilityNegotiated/VersionDeprecated/CompatibilityViolationDetected| BACKBONE
+  BACKBONE -.-> AUDIT
+  BACKBONE -.-> OBS
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,METRICS,ADAPTER kernel;

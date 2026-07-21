@@ -1,0 +1,38 @@
+flowchart TD
+  START["evaluate(contract, {version, capabilities})"] --> LOAD["load contract\nverify checksum → IntegrityError on drift"]
+  LOAD --> RETIRED{deprecationStatus\n= retired?}
+  RETIRED -- yes --> INCOMPAT["compatible = false\n(deprecated flag set)"]
+  RETIRED -- no --> VER{requested version?}
+
+  VER -- none --> VOK["versionOk = true"]
+  VER -- exact match --> VOK2["versionOk = true\nbackward = forward = true"]
+  VER -- other --> LVL{compatibilityLevel}
+
+  LVL -- strict / none --> VNO["versionOk = false"]
+  LVL -- backward --> BW["versionOk = supported AND version ≤ contract.version"]
+  LVL -- forward --> FW["versionOk = supported AND version ≥ contract.version"]
+  LVL -- full --> FL["versionOk = supported (either direction)"]
+
+  VOK --> CAPS
+  VOK2 --> CAPS
+  VNO --> CAPS
+  BW --> CAPS
+  FW --> CAPS
+  FL --> CAPS
+
+  CAPS["missingCapabilities = requested − offered"] --> DECIDE{versionOk AND\nno missing caps AND\nnot retired?}
+  DECIDE -- yes --> COMPAT["compatible = true"]
+  DECIDE -- no --> VIOL["compatible = false\nemit CompatibilityViolationDetected"]
+
+  subgraph Deprecation["Deprecation governance (deprecate)"]
+    ACTIVE["active"] -->|deprecate + replacement| DEP["deprecated\nemit VersionDeprecated"]
+    DEP -->|retire| RET["retired"]
+    ACTIVE -->|retire| RET
+  end
+
+  subgraph Negotiation["negotiate"]
+    N1["resolveVersion → highest supported satisfying request"] --> N2["agreedCapabilities = requested ∩ offered"]
+    N2 --> N3{strict AND unmet?}
+    N3 -- yes --> NERR["throw NegotiationError"]
+    N3 -- no --> NOK["emit CapabilityNegotiated"]
+  end
