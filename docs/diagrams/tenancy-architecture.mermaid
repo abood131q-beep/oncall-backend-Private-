@@ -1,0 +1,46 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    KERNELS["Kernel Services (Gateway/Mesh/…)\npropagate the resolved tenant context"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph TK["Multi-Tenancy Kernel Service — ADR-038"]
+    SERVICE["tenancyService\nregisterTenant/resolveTenant\nactivate/deactivate/verify/health"]
+    CACHE["context cache (checksum-keyed)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped tenancy() port\ntenant:read · tenant:manage\ncross-tenant prevention"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    TEN["tenant (status + refs + checksum)"]
+    CTX["context (inheritance + capability)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (tenant defs only)"]
+    MEM["memory"]
+    FUT["extension points:\npostgresql · storage · redis · mongodb · cloud-registry · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  CFG["Configuration (ADR-019)\nconfigRef inherited"]
+  POL["Policy (ADR-025)\npolicyRef inherited"]
+  ID["Identity (ADR-027)\nprincipal → tenant"]
+  AUDIT["Audit (ADR-026)\nrecords tenant events"]
+
+  KERNELS --> SERVICE
+  EXT -->|this.tenancy| ADAPTER --> SERVICE
+  SERVICE --> CTX
+  SERVICE --> TEN
+  SERVICE --> CACHE
+  SERVICE --> Providers
+  SERVICE -.->|configRef| CFG
+  SERVICE -.->|policyRef| POL
+  ID -.->|associates| SERVICE
+  SERVICE -->|Registered/Activated/Deactivated/Resolved/Updated/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,CACHE,METRICS,ADAPTER kernel;

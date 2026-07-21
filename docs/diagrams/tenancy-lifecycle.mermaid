@@ -1,0 +1,27 @@
+stateDiagram-v2
+  [*] --> pending: registerTenant\nTenantRegistered
+
+  pending --> active: activateTenant\nchecksum bumped · cache invalidated\nTenantActivated
+  active --> inactive: deactivateTenant\nTenantDeactivated
+  inactive --> active: activateTenant\nTenantActivated
+  pending --> inactive: deactivateTenant
+
+  active --> active: resolveTenant\nbuild context (inheritance) · cache by checksum\nTenantResolved
+  inactive --> inactive: resolveTenant (active=false)
+  pending --> pending: resolveTenant (active=false)
+
+  active --> suspended: update tenantStatus
+  suspended --> active: activateTenant
+
+  note right of active
+    resolveTenant returns a frozen context:
+    capabilities = defaults ∪ tenant,
+    labels/config/policy = tenant-overrides-default,
+    active = (status === active).
+    Cross-namespace + cross-tenant access is prevented.
+  end note
+
+  note right of pending
+    verify() recomputes each tenant's checksum;
+    a mismatch → integrity issue (resolve throws IntegrityError).
+  end note
