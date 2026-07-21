@@ -1,0 +1,41 @@
+flowchart TB
+  subgraph Consumers["Reporters + consumers (via port only)"]
+    KERNELS["Kernel Services (ADR-016…032)\nself-report via collect()"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph OB["Observability Kernel Service — ADR-033"]
+    SERVICE["observabilityService\nregister/collect/snapshot\ndiagnostics/verify/health"]
+    REGISTRY["component registry"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped observability() port\nobservability:read · observability:diagnostics"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    COMP["component (registers + checksum)"]
+    HEALTH["health (worst-of lattice)"]
+    AGG["aggregation (counters/gauges/timers)"]
+    RED["redaction (mask sensitive)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (store/export only)"]
+    MEM["memory"]
+    FUT["extension points:\nprometheus · opentelemetry · grafana · datadog · cloud-monitoring · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  AUDIT["Audit (ADR-026)\nrecords observability events"]
+
+  KERNELS -->|collect| SERVICE
+  EXT -->|this.observability| ADAPTER --> SERVICE
+  SERVICE --> REGISTRY
+  SERVICE --> Domain
+  SERVICE -->|export + snapshots| Providers
+  SERVICE -->|MetricsCollected/SnapshotCreated/HealthChanged/DiagnosticsGenerated/VerificationCompleted| BACKBONE
+  BACKBONE -.-> AUDIT
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,REGISTRY,METRICS,ADAPTER kernel;

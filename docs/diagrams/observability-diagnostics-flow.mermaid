@@ -1,0 +1,37 @@
+flowchart TD
+  START([collect componentId + report]) --> ID{componentId present?}
+  ID -->|no| VERR[throw ObservabilityValidationError]
+  ID -->|yes| LOCK[lock per component]
+  LOCK --> UP{component exists?}
+  UP -->|yes| MERGE[rehydrate + report merge\ncounters ADD · gauges SET · timers accumulate]
+  UP -->|no| NEW[create component service]
+  NEW --> MERGE
+  MERGE --> STORE[store model · recompute checksum]
+  STORE --> EXPORT[provider.exportMetrics]
+  EXPORT --> EV1[MetricsCollected]
+  EV1 --> HC{health changed?}
+  HC -->|yes| EV2[HealthChanged]
+  HC -->|no| DONE1([component updated])
+  EV2 --> DONE1
+
+  subgraph SNAP[snapshot]
+    S1[gather namespace components] --> S2[aggregateMetrics\ncounters/gauges sum · timers merge]
+    S2 --> S3[aggregateHealth worst-of]
+    S3 --> S4[build snapshot + checksum]
+    S4 --> S5[provider.putSnapshot · history ring · SnapshotCreated]
+  end
+
+  subgraph DIAG[diagnostics]
+    D1[gather components] --> D2[redact sensitive metadata]
+    D2 --> D3[failure aggregation\ndegraded + failed]
+    D3 --> D4[engine diagnostics + DiagnosticsGenerated]
+  end
+
+  subgraph VER[verify]
+    V1[recompute component checksums] --> V2[recompute snapshot checksums]
+    V2 --> V3[issues[] + VerificationCompleted]
+  end
+
+  DONE1 -.-> SNAP
+  DONE1 -.-> DIAG
+  DONE1 -.-> VER
