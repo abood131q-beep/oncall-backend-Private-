@@ -1,0 +1,17 @@
+flowchart TD
+  CALL["bootstrap(options)"] --> SUP["create RuntimeSupervisor\n(state: created)"]
+  SUP --> CREATE["createPlatform(options)\n── ADR-042 Composition Root ──\n(state: verifying)"]
+  CREATE --> VERIFY{"startupVerifier.verifyStartup(platform)\ncomposition · graph · registered · ports ·\nproviders · compatibility · config · backbone"}
+  VERIFY -- fail --> ABORT["throw StartupVerificationError\n(state: failed) — ABORT, platform NOT started"]
+  VERIFY -- pass --> START["platform.start()\n── delegated to Lifecycle (ADR-040) ──\n(state: starting)"]
+  START --> SURF["build ShutdownManager + RuntimeContext\nrecord startupDurationMs + bootstrap metadata"]
+  SURF --> WAIT["supervisor.sampleHealth(platform)\nwait until ready (state: ready)"]
+  WAIT --> RET["createRuntime({ supervisor, initial, rebuild:assemble })\nreturn Runtime"]
+  RET --> READY["await runtime.ready() → { ready:true }"]
+
+  ABORT -. wrapped as .-> BOOT["BootstrapError (non-verification failures)"]
+
+  classDef rt fill:#eef,stroke:#66a;
+  class SUP,CREATE,VERIFY,START,SURF,WAIT,RET rt;
+  classDef bad fill:#fee,stroke:#a66;
+  class ABORT,BOOT bad;

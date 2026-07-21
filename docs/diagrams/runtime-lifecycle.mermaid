@@ -1,0 +1,36 @@
+stateDiagram-v2
+  [*] --> created: createRuntimeSupervisor
+
+  created --> verifying: bootstrap → createPlatform
+  verifying --> starting: startupVerifier passes
+  verifying --> failed: startupVerifier fails (ABORT)
+  starting --> ready: platform.start() + sampleHealth
+
+  ready --> degraded: sampleHealth → overall=false
+  degraded --> ready: sampleHealth → overall=true
+
+  ready --> shutting_down: runtime.shutdown()
+  degraded --> shutting_down: runtime.shutdown()
+  shutting_down --> stopped: Lifecycle stop + verify
+  shutting_down --> failed: shutdown timeout (not forced)
+
+  ready --> restarting: runtime.restart()
+  degraded --> restarting: runtime.restart()
+  restarting --> ready: verify → shutdown → rebuild → start → verify
+  restarting --> failed: any restart step fails
+
+  failed --> [*]
+  stopped --> [*]
+
+  note right of shutting_down
+    shutdown() delegates to the Lifecycle Kernel (ADR-040):
+    kernels stop in reverse dependency order. The Shutdown
+    Manager adds timeout + force policy and verifies that no
+    lifecycle components remain started.
+  end note
+
+  note right of restarting
+    restart() reuses the SAME assemble() path bootstrap uses
+    (create → verify → start), so composition logic is never
+    duplicated. The supervisor persists and counts restarts.
+  end note
