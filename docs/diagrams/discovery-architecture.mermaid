@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph DK["Service Discovery Kernel Service — ADR-034"]
+    SERVICE["discoveryService\nregister/discover/resolve\nlist/verify/health"]
+    CACHE["provider cache\n(per-namespace)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped discovery() port\ndiscovery:read · discovery:resolve"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    SRV["service (endpoint + checksum)"]
+    SEL["selection (match · order · weighted select)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (store definitions only)"]
+    MEM["memory"]
+    FUT["extension points:\nconsul · etcd · kubernetes · dns · cloud-registry · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  POLICY["Policy Engine (ADR-025)\ngoverns discovery:read/resolve"]
+  OBS["Observability (ADR-033)\nconsumes health changes"]
+  AUDIT["Audit (ADR-026)\nrecords discovery events"]
+
+  SVC --> SERVICE
+  EXT -->|this.discovery| ADAPTER --> SERVICE
+  SERVICE --> SEL
+  SERVICE --> SRV
+  SERVICE --> CACHE
+  SERVICE --> Providers
+  SERVICE -->|Registered/Updated/Resolved/Unavailable/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  BACKBONE -.-> OBS
+  POLICY -.->|authorize| ADAPTER
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,CACHE,METRICS,ADAPTER kernel;

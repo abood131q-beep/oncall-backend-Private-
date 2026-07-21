@@ -1,0 +1,35 @@
+flowchart TD
+  START([resolve serviceName + query + key]) --> NAME{serviceName present?}
+  NAME -->|no| VERR[throw DiscoveryValidationError]
+  NAME -->|yes| LOAD[load services\nprovider cache → provider on miss]
+
+  LOAD --> FILTER[filter candidates]
+  FILTER --> F1[match serviceName]
+  F1 --> F2[version-aware match semver]
+  F2 --> F3[capabilities subset]
+  F3 --> F4[tags subset]
+  F4 --> F5[metadata match]
+  F5 --> F6[exclude failed / healthyOnly]
+  F6 --> ORDER[order: priority desc · weight desc · instanceId]
+
+  ORDER --> ANY{candidates?}
+  ANY -->|no| UNAVAIL[record unavailable\nServiceUnavailable\nthrow ServiceNotFoundError]
+  ANY -->|yes| TIER[take highest-priority tier]
+  TIER --> KEY{key provided?}
+  KEY -->|yes| WEIGHTED[hash serviceName:key mod totalWeight\nwalk tier by weight]
+  KEY -->|no| FIRST[first of tier\nhighest weight then instanceId]
+  WEIGHTED --> SELECTED[selected instance]
+  FIRST --> SELECTED
+  SELECTED --> EMIT[record resolution + latency\nServiceResolved]
+  EMIT --> END([selected endpoint + explanation])
+
+  subgraph REG[register / update]
+    R1[create service + checksum] --> R2[provider.putService]
+    R2 --> R3[invalidate namespace cache]
+    R3 --> R4[ServiceRegistered / ServiceUpdated\nhealth change → recordHealthChange\nfailed → ServiceUnavailable]
+  end
+
+  subgraph VER[verify]
+    V1[recompute service checksums] --> V2[verify endpoint well-formed]
+    V2 --> V3[issues[] + DiscoveryVerified]
+  end
