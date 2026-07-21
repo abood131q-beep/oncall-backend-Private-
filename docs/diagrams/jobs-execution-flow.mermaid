@@ -1,0 +1,33 @@
+flowchart TD
+  START([enqueue / schedule]) --> CREATE[create job · compute checksum]
+  CREATE --> IDEM{idempotencyKey completed?}
+  IDEM -->|yes| SHORT[return completed job\nrecord duplicate]
+  IDEM -->|no| DEDUP{dedupKey live?}
+  DEDUP -->|yes| DUP[return existing\nrecord duplicate]
+  DEDUP -->|no| PERSIST[persist · JobQueued]
+
+  PERSIST --> MODE{enqueue or schedule?}
+  MODE -->|schedule| SCH[status = scheduled]
+  MODE -->|enqueue| QUEUED[status = queued]
+  SCH --> WAIT[(await tick when due)]
+  QUEUED --> WAIT
+
+  WAIT --> ORDER[tick: order due jobs\npriority desc, then FIFO seq]
+  ORDER --> RUN[status = running · attempt++ · JobStarted]
+  RUN --> HANDLER[await handler payload, ctx]
+
+  HANDLER --> OK{resolved?}
+  OK -->|yes| TMO{exceeded timeout?}
+  TMO -->|no| DONE[status = completed\nrecord latency · JobCompleted]
+  TMO -->|yes| FAIL
+  OK -->|threw| FAIL[failure]
+
+  FAIL --> RETRY{retryPolicy.shouldRetry?}
+  RETRY -->|yes| RESCH[status = retrying\nnextAttemptAt = now + backoff\nJobFailed willRetry · JobRetried]
+  RETRY -->|no| DL[status = dead_letter\nJobFailed deadLettered]
+  RESCH --> WAIT
+
+  DONE --> END([terminal])
+  DL --> END
+
+  RECOVER[[recovery pass:\nrunning past timeout → failure]] -.-> FAIL

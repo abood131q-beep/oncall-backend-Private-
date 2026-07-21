@@ -1,0 +1,45 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph JK["Background Jobs Kernel Service — ADR-032"]
+    SERVICE["jobsService\nregister/enqueue/schedule\ncancel/status/verify/health/tick"]
+    HANDLERS["handler registry\n(type → fn)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped jobs() port\njobs:enqueue · jobs:read"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    JOB["job (status + history + checksum)"]
+    RETRY["retryPolicy (backoff)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (persist jobs only)"]
+    MEM["memory"]
+    FUT["extension points:\nredis · postgresql · storage · mongodb · message-queue · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  SCHED["Scheduler (ADR-020)\ndrives tick()"]
+  WF["Workflow (ADR-023)\ncorrelates via workflowId"]
+  AUDIT["Audit (ADR-026)\nrecords job events"]
+  DLQ["Dead-letter queue\n(status = dead_letter)"]
+
+  SVC --> SERVICE
+  EXT -->|this.jobs| ADAPTER --> SERVICE
+  SERVICE --> HANDLERS
+  SERVICE --> Domain
+  SERVICE --> Providers
+  SERVICE --> DLQ
+  SERVICE -->|Registered/Queued/Started/Completed/Failed/Retried/Cancelled| BACKBONE
+  BACKBONE -.-> AUDIT
+  SCHED -.->|tick| SERVICE
+  WF -.->|workflowId| SERVICE
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,HANDLERS,METRICS,ADAPTER kernel;
