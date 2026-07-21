@@ -1,0 +1,30 @@
+flowchart TD
+  START([invoke connectionId + fn + token]) --> RESOLVE[resolve connection + checksum integrity]
+  RESOLVE --> EST{state established?}
+  EST -->|no| NC[MeshRejected not_connected]
+  EST -->|yes| IDP[identity propagation\nIdentity.resolve → context.identity]
+
+  IDP --> SEC{security admission\nmutual identity + allowedSources + mtls}
+  SEC -->|deny| V1[policy violation\nInvocationFailed · MeshRejected reason]
+  SEC -->|allow| POL{Policy.evaluate?}
+  POL -->|deny| V2[MeshRejected policy_denied]
+  POL -->|allow / none| RL{rate limit policy?}
+  RL -->|consume → blocked| V3[MeshRejected rate_limited]
+  RL -->|allowed / none| TRAF{traffic maxConcurrent?}
+  TRAF -->|exceeded| V4[MeshRejected traffic_limit]
+  TRAF -->|slot| DISC{discovery port?}
+  DISC -->|resolve endpoint| CTX
+  DISC -->|none| CTX[build secure context\nsource · destination · endpoint · route · identity]
+
+  CTX --> STARTED[InvocationStarted]
+  STARTED --> RETRY{retryPolicy.resiliencePolicyId + Resilience port?}
+  RETRY -->|yes| DELEG[Resilience.execute wraps fn\ntimeout-bounded]
+  RETRY -->|no| DIRECT[run fn with timeout]
+  DELEG --> OUT{ok?}
+  DIRECT --> OUT
+  OUT -->|resolved| DONE[record success + latency\nInvocationCompleted]
+  OUT -->|threw / timeout| FAIL[record failure\nInvocationFailed]
+
+  DONE --> END([result + route + latency · inflight--])
+  FAIL --> END
+  V1 --> END

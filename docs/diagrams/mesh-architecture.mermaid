@@ -1,0 +1,51 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    GW["API Gateway / Kernel Services\nhand a call to invoke()"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph MK["Service Mesh Kernel Service — ADR-037"]
+    SERVICE["meshService\nregisterPolicy/connect/invoke\ndisconnect/verify/health"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped mesh() port\nmesh:invoke · mesh:read"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    CONN["connection (policies + checksum)"]
+    POLS["policies (security · routing)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (connection defs only)"]
+    MEM["memory"]
+    FUT["extension points:\nistio · linkerd · consul-connect · cloud-mesh · custom"]
+  end
+
+  subgraph Kernels["Injected kernel ports (integration §5)"]
+    ID["Identity (ADR-027) · resolve"]
+    POL["Policy (ADR-025) · evaluate"]
+    RL["Rate Limiting (ADR-031) · consume"]
+    DISC["Service Discovery (ADR-034) · resolve"]
+    RES["Resilience (ADR-036) · execute"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  AUDIT["Audit (ADR-026)\nrecords mesh events"]
+
+  GW --> SERVICE
+  EXT -->|this.mesh| ADAPTER --> SERVICE
+  SERVICE --> POLS
+  SERVICE --> CONN
+  SERVICE --> Providers
+  SERVICE -.->|identity + context| ID
+  SERVICE -.->|enforce| POL
+  SERVICE -.->|throttle| RL
+  SERVICE -.->|endpoint| DISC
+  SERVICE -.->|retry delegation| RES
+  SERVICE -->|Registered/Established/Invocation*/Closed/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,METRICS,ADAPTER kernel;
