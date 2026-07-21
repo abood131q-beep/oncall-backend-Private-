@@ -20,9 +20,22 @@ const harnesses = readdirSync(DIR)
 
 let failed = 0;
 console.log(`\n▶ Running ${harnesses.length} A/B compatibility harnesses\n${'='.repeat(56)}`);
+// Hard per-harness timeout so a single hanging harness can never stall the CI job
+// indefinitely (a timeout is treated as a FAILURE, never a skip).
+const HARNESS_TIMEOUT_MS = Number(process.env.AB_HARNESS_TIMEOUT_MS || 300000);
 for (const h of harnesses) {
   process.stdout.write(`  • ${h.padEnd(24)} `);
-  const r = spawnSync(process.execPath, [join(DIR, h)], { cwd: ROOT, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(DIR, h)], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: HARNESS_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
+  });
+  if (r.error && r.error.code === 'ETIMEDOUT') {
+    failed++;
+    console.log(`❌ TIMEOUT after ${HARNESS_TIMEOUT_MS / 1000}s (killed)`);
+    continue;
+  }
   const out = (r.stdout || '') + (r.stderr || '');
   const line = out.split('\n').find((l) => /Result:|IDENTICAL/.test(l)) || '';
   if (r.status === 0) {
