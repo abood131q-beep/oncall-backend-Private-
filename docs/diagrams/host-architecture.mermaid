@@ -1,0 +1,39 @@
+flowchart TB
+  subgraph Operator["Operator / deployment entry point"]
+    MAIN["bootstrap(config) → createHost({ runtime })"]
+  end
+
+  subgraph Host["Enterprise Host Runtime — ADR-044 (src/host)"]
+    BUILDER["hostBuilder\ncreateHost(options)"]
+    CTX["hostContext (immutable)\nruntime·platform·configuration·logger\nmetrics·environment·version·shared"]
+    REG["hostRegistry\nregister/unregister/resolve/list/verify\n+ service contract (§2)"]
+    SUP["hostSupervisor\nruntime/service state · failures · restarts"]
+    LIFE["hostLifecycle\nRuntime → services · services → Runtime"]
+    API["Host API\nregister·unregister·start·stop·restart\nhealth·verify·listServices·runtime"]
+  end
+
+  subgraph Services["Hosted services (isolated)"]
+    GW["api-gateway"]
+    WK["worker"]
+    ADM["admin"]
+    PL["plugin…"]
+  end
+
+  RT["Bootstrap Runtime — ADR-043\nready/health/verify/shutdown/restart"]
+  PLAT["Composition Root — ADR-042\n(25 kernels)"]
+
+  MAIN --> BUILDER
+  BUILDER --> CTX
+  BUILDER --> REG
+  BUILDER --> SUP
+  BUILDER --> API
+  API --> LIFE
+  LIFE -->|ready / shutdown / restart| RT
+  RT --> PLAT
+  LIFE -->|start/stop via §2 contract| Services
+  CTX -.->|scopeFor(needs) — declared slices only| Services
+  SUP -.->|monitor state + health| LIFE
+  LIFE -. reuses ADR-042 dependency graph .-> PLAT
+
+  classDef host fill:#eef,stroke:#66a;
+  class BUILDER,CTX,REG,SUP,LIFE,API host;

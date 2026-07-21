@@ -1,0 +1,42 @@
+stateDiagram-v2
+  [*] --> created: createHost({ runtime })
+
+  created --> starting: host.start()
+  starting --> ready: Runtime ready → services started (dependency order)
+  starting --> failed: a service failed to start (ServiceLifecycleError)
+
+  ready --> degraded: a service or the runtime became unhealthy
+  degraded --> ready: health recovered
+
+  ready --> shutting_down: host.stop()
+  degraded --> shutting_down: host.stop()
+  shutting_down --> stopped: services stopped (reverse) → Runtime stopped
+
+  ready --> restarting: host.restart()
+  degraded --> restarting: host.restart()
+  restarting --> ready: stop services → runtime.restart() → start services
+  restarting --> failed: a restart step failed
+
+  failed --> [*]
+  stopped --> [*]
+
+  note right of starting
+    Startup order: Runtime (delegated to ADR-043) THEN hosted
+    services in deterministic dependency order (ADR-042 graph).
+    Each service.start(ctx) receives ONLY its declared context slices.
+  end note
+
+  note right of shutting_down
+    Shutdown order: hosted services in REVERSE dependency order
+    (graceful — a failing stop is recorded, not fatal) THEN the
+    Runtime (ADR-043 timeout/force policy applies).
+  end note
+
+  state "per-service states" as PS {
+    [*] --> registered
+    registered --> s_starting: start
+    s_starting --> started
+    started --> s_stopping: stop
+    s_stopping --> s_stopped
+    s_starting --> s_failed: start threw
+  }
