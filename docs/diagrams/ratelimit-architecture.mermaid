@@ -1,0 +1,42 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph RL["Rate Limiting Kernel Service — ADR-031"]
+    SERVICE["ratelimitService\nregisterPolicy/evaluate/consume\nreset/verify/health"]
+    CACHE["usage cache\n(write-through · FIFO)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped ratelimit() port\nrate:read · rate:evaluate"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    POL["policy (limit/window/algo + checksum)"]
+    ALGO["algorithms\nfixed · sliding · token · leaky"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (policies + counters)"]
+    MEM["memory"]
+    FUT["extension points:\nredis · storage · postgresql · mongodb · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  POLICY["Policy Engine (ADR-025)\ngoverns rate:read/evaluate"]
+  AUDIT["Audit (ADR-026)\nrecords rate events"]
+
+  SVC --> SERVICE
+  EXT -->|this.ratelimit| ADAPTER --> SERVICE
+  SERVICE --> ALGO
+  SERVICE --> POL
+  SERVICE --> CACHE
+  SERVICE --> Providers
+  SERVICE -->|Registered/Evaluated/Consumed/Exceeded/Reset| BACKBONE
+  BACKBONE -.-> AUDIT
+  POLICY -.->|authorize| ADAPTER
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,CACHE,METRICS,ADAPTER kernel;

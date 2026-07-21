@@ -1,0 +1,29 @@
+flowchart TD
+  START([evaluate / consume]) --> SUBJ{subject present?}
+  SUBJ -->|no| VERR[throw RateLimitValidationError]
+  SUBJ -->|yes| RESOLVE[resolve policy\nexplicit policyId OR highest-priority by subjectType]
+  RESOLVE -->|none| NF[throw PolicyNotFoundError]
+  RESOLVE --> INT{policy checksum valid?}
+  INT -->|no| IErr[record integrityFailure\nthrow IntegrityError]
+  INT -->|yes| READ[read counter state\nusage cache → provider on miss]
+
+  READ --> ALGO{algorithm}
+  ALGO -->|fixed_window| FW[count in aligned window]
+  ALGO -->|sliding_window| SW[sum log within window]
+  ALGO -->|token_bucket| TB[refill tokens by elapsed·rate]
+  ALGO -->|leaky_bucket| LB[leak level by elapsed·rate]
+
+  FW --> DECIDE
+  SW --> DECIDE
+  TB --> DECIDE
+  LB --> DECIDE
+  DECIDE{usage + cost <= capacity?}
+
+  DECIDE -->|dry-run evaluate| EXPLAIN[return explanation\nallowed · remaining · resetTime\nNO mutation · RateLimitEvaluated]
+
+  DECIDE -->|consume · allowed| WCONS[persist stateIfConsumed\nrecord allowed + consumption\nQuotaConsumed]
+  DECIDE -->|consume · blocked| WDECAY[persist stateDecayed\nrecord blocked\nQuotaExceeded]
+
+  WCONS --> RESULT([result: allowed · remaining · usage · resetTime])
+  WDECAY --> RESULT
+  EXPLAIN --> RESULT
