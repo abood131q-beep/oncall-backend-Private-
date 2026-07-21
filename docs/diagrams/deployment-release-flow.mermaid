@@ -1,0 +1,39 @@
+stateDiagram-v2
+  [*] --> idle: createDeployment({ host })
+
+  idle --> planning: deploy()
+  planning --> failed: plan invalid (DeploymentPlanError)
+  planning --> deploying: plan.ok
+
+  deploying --> verifying: release strategy completed
+  deploying --> failed: strategy failed (DeploymentExecutionError)
+
+  verifying --> deployed: verification passed
+  verifying --> failed: verification failed (DeploymentVerificationError)
+
+  failed --> rolling_back: automatic rollback (unless autoRollback:false)
+  deployed --> rolling_back: rollback() (manual/partial/full)
+  rolling_back --> rolled_back: rollback verified
+  rolling_back --> failed: rollback verification failed (RollbackError)
+
+  deployed --> [*]
+  rolled_back --> [*]
+
+  note right of deploying
+    Release strategy (injected, deterministic):
+      immediate → deploy, verify
+      rolling   → deploy, verify × N waves
+      blue-green→ deploy green, verify, switch (blue retained)
+      canary    → deploy, verify at each stage %
+    Each drives the ops facade (deploy/health/undeploy) → Host Runtime.
+  end note
+
+  note right of verifying
+    §8 checks: plan completed · host healthy · runtime healthy ·
+    all services healthy · compatibility passed · strategy completed.
+  end note
+
+  note right of rolling_back
+    Restores the retained previous version through the host,
+    reusing ADR-040 lifecycle transitively (ADR-044 → ADR-043 → ADR-040).
+  end note

@@ -1,0 +1,42 @@
+flowchart TB
+  subgraph Operator["Operator / deployment entry point"]
+    MAIN["bootstrap → createHost → createDeployment"]
+  end
+
+  subgraph Dep["Enterprise Deployment Runtime — ADR-045 (src/deployment)"]
+    BUILDER["deploymentBuilder\ncreateDeployment(options)"]
+    CTX["deploymentContext (immutable)\nhost·runtime·platform·config·logger\nmetrics·environment·version·metadata"]
+    REG["deploymentRegistry\nrecords · history · current"]
+    SUP["deploymentSupervisor\nstate · strategy · verify · rollback · duration · failures"]
+    PLAN["deploymentPlanner\ngenerate + validate (never executes)"]
+    STRAT["releaseStrategy\nimmediate · rolling · blue-green · canary (DI)"]
+    RB["rollbackManager\nauto · manual · partial · full + verify"]
+    VER["deploymentVerifier\nplan·host·runtime·services·compat·strategy"]
+    API["Deployment API (§2)\ndeploy·rollback·verify·status\nhistory·version·metadata·health"]
+  end
+
+  OPS["ops facade\ndeploy / undeploy / health"]
+  HOST["Host Runtime — ADR-044\nregister/unregister/start/stop/health"]
+  RT["Bootstrap Runtime — ADR-043"]
+  PLAT["Composition Root — ADR-042 (25 kernels)"]
+
+  MAIN --> BUILDER
+  BUILDER --> CTX
+  BUILDER --> REG
+  BUILDER --> SUP
+  BUILDER --> API
+  API --> PLAN
+  API --> STRAT
+  API --> VER
+  API --> RB
+  STRAT --> OPS
+  RB --> OPS
+  OPS --> HOST
+  VER -->|health/verify| HOST
+  PLAN -. reuses ADR-042 graph .-> PLAT
+  PLAN -. compatibility (ADR-041) · resources (ADR-039) .-> PLAT
+  HOST --> RT --> PLAT
+  SUP -.->|monitor| API
+
+  classDef dep fill:#eef,stroke:#66a;
+  class BUILDER,CTX,REG,SUP,PLAN,STRAT,RB,VER,API dep;
