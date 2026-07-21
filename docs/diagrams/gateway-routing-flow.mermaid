@@ -1,0 +1,34 @@
+flowchart TD
+  START([dispatch method + path + version]) --> LOAD[load routes\nroute cache → provider on miss]
+  LOAD --> MATCH[resolveRoutes\npriority desc · specificity desc · routeId]
+  MATCH --> ANY{any match?}
+  ANY -->|no| NF[record failed resolution\nGatewayRejected no_route\nthrow RouteNotFoundError]
+  ANY -->|yes| INT{route checksum valid?}
+  INT -->|no| IErr[record integrityFailure\nGatewayRejected integrity]
+  INT -->|yes| AUTH{authRequired?}
+
+  AUTH -->|yes| IDR[Identity.resolve\npropagate context]
+  IDR --> AOK{authenticated?}
+  AOK -->|no| REJ1[GatewayRejected unauthenticated]
+  AOK -->|yes| FF
+  AUTH -->|no| FF{feature flag?}
+
+  FF -->|off| REJ2[GatewayRejected feature_disabled]
+  FF -->|on / none| POL[Policy.evaluate per policy]
+  POL --> PD{any deny?}
+  PD -->|yes| REJ3[GatewayRejected policy_denied]
+  PD -->|no| RL{rate limit policy?}
+  RL -->|consume → blocked| REJ4[GatewayRejected rate_limited]
+  RL -->|allowed / none| TGT[target resolution]
+  TGT --> DISC{targetService?}
+  DISC -->|yes| DR[Service Discovery.resolve → endpoint]
+  DISC -->|no| STATIC[static targetEndpoint]
+  DR --> PIPE
+  STATIC --> PIPE[middleware pipeline in order]
+  PIPE --> MOK{middleware ok?}
+  MOK -->|missing / error| REJ5[GatewayRejected middleware_*]
+  MOK -->|ok| HANDLER[optional upstream handler]
+  HANDLER --> TMO{elapsed > timeout?}
+  TMO -->|yes| REJ6[GatewayRejected timeout]
+  TMO -->|no| DISPATCHED[record latency\nRequestDispatched]
+  DISPATCHED --> END([target + params + context + result])

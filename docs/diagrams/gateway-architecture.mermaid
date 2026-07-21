@@ -1,0 +1,55 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    EDGE["Edge transport / Platform Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph GK["API Gateway Kernel Service — ADR-035"]
+    SERVICE["gatewayService\nregisterRoute/resolve/dispatch\nlistRoutes/verify/health"]
+    MW["middleware registry + pipeline"]
+    CACHE["route cache (per-namespace)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped gateway() port\ngateway:read · gateway:dispatch"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    RT["route (checksum)"]
+    MATCH["matching (path/method/version · ordering)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (store route defs only)"]
+    MEM["memory"]
+    FUT["extension points:\nkong · envoy · nginx · cloud-gateway · custom"]
+  end
+
+  subgraph Kernels["Injected kernel ports (integration §5)"]
+    ID["Identity (ADR-027) · resolve"]
+    POL["Policy (ADR-025) · evaluate"]
+    RL["Rate Limiting (ADR-031) · consume"]
+    FF["Feature Flags (ADR-029) · evaluate"]
+    DISC["Service Discovery (ADR-034) · resolve"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  AUDIT["Audit (ADR-026)\nrecords gateway events"]
+
+  EDGE --> SERVICE
+  EXT -->|this.gateway| ADAPTER --> SERVICE
+  SERVICE --> MATCH
+  SERVICE --> RT
+  SERVICE --> MW
+  SERVICE --> CACHE
+  SERVICE --> Providers
+  SERVICE -.->|auth| ID
+  SERVICE -.->|enforce| POL
+  SERVICE -.->|throttle| RL
+  SERVICE -.->|gate| FF
+  SERVICE -.->|target| DISC
+  SERVICE -->|Registered/Updated/Resolved/Dispatched/Rejected/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,MW,CACHE,METRICS,ADAPTER kernel;
