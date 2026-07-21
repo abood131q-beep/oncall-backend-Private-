@@ -1,0 +1,31 @@
+flowchart TD
+  START([send / schedule]) --> CREATE[create notification\nresolve template · compute checksum]
+  CREATE --> DEDUP{dedup key active?\nnon-terminal exists?}
+  DEDUP -->|yes| DUP[return existing\nrecord duplicate]
+  DEDUP -->|no| PERSIST[persist · NotificationCreated]
+
+  PERSIST --> MODE{send or schedule?}
+  MODE -->|schedule| SCH[status = scheduled\nNotificationScheduled]
+  SCH --> WAIT[(await tick when due)]
+  MODE -->|send| DUE
+  WAIT -->|due| DUE[deliver now]
+
+  DUE --> EXP{expired?}
+  EXP -->|yes| EXPIRED[status = expired\nNotificationFailed reason=expired]
+  EXP -->|no| CH{channel registered?}
+  CH -->|no| CHFAIL[status = failed\nChannelError reason]
+  CH -->|yes| ATTEMPT[record attempt\nstatus = sent · NotificationSent]
+
+  ATTEMPT --> DELIVER[provider.deliver model\nmeasure latency]
+  DELIVER --> OK{ok?}
+  OK -->|yes| DELIVERED[status = delivered\nrecord delivery · NotificationDelivered]
+  OK -->|no / throw| RETRY{retryPolicy.shouldRetry?}
+  RETRY -->|yes| RESCH[status = scheduled\nnextAttemptAt = now + backoff\nrecord retry · NotificationFailed willRetry=true]
+  RETRY -->|no| FAILED[status = failed\nNotificationFailed willRetry=false]
+  RESCH --> WAIT
+
+  DELIVERED --> END([terminal])
+  FAILED --> END
+  EXPIRED --> END
+  CHFAIL --> END
+  DUP --> END

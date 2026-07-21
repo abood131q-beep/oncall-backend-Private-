@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    SVC["Platform Services / Kernels"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph NK["Notification Kernel Service — ADR-030"]
+    SERVICE["notificationsService\nregisterChannel/send/schedule\ncancel/status/verify/health/tick"]
+    STORE["store (lifecycle repository)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped notifications() port\nnotification:send · notification:read"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    NOTE["notification (status + checksum)"]
+    RETRY["retryPolicy (backoff)"]
+    TMPL["template (deterministic render)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Delivery providers (delivery only)"]
+    MEM["memory"]
+    FUT["extension points:\nfcm · apns · twilio · email · webhook · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  SCHED["Scheduler (ADR-020)\ndrives tick()"]
+  WF["Workflow (ADR-023)\ncorrelates via workflowId"]
+  AUDIT["Audit (ADR-026)\nrecords notification events"]
+
+  SVC --> SERVICE
+  EXT -->|this.notifications| ADAPTER --> SERVICE
+  SERVICE --> Domain
+  SERVICE --> STORE
+  SERVICE -->|deliver| Providers
+  SERVICE -->|Created/Scheduled/Sent/Delivered/Failed/Cancelled| BACKBONE
+  BACKBONE -.-> AUDIT
+  SCHED -.->|tick| SERVICE
+  WF -.->|workflowId| SERVICE
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,STORE,METRICS,ADAPTER kernel;
