@@ -1,0 +1,33 @@
+stateDiagram-v2
+  [*] --> registered: register\nComponentRegistered
+
+  registered --> initialized: initialize\nrun init hook · ComponentInitialized
+  initialized --> started: start\nrun start hook · ComponentStarted
+  registered --> initialized: start (auto-init)
+
+  started --> suspended: suspend
+  suspended --> started: resume
+  started --> stopped: stop\nrun stop hook · ComponentStopped
+  suspended --> stopped: stop
+  initialized --> stopped: stop
+
+  stopped --> started: restart\n(stop then start) · ComponentRestarted
+  stopped --> initialized: initialize
+
+  started --> failed: hook error
+  initialized --> failed: hook error
+  failed --> started: recovery / restart
+
+  note right of started
+    start() orders components by a topological sort of the
+    dependency graph (deps first, then startupPriority, then id).
+    A component starts ONLY when all its dependencies are started
+    (health-aware). Every transition is validated against the
+    legal transition table; illegal transitions throw TransitionError.
+  end note
+
+  note right of stopped
+    stop() runs the EXACT reverse of the startup order
+    (dependents shut down before their dependencies).
+    verify() flags cycles, missing dependencies, and checksum drift.
+  end note

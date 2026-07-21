@@ -1,0 +1,48 @@
+flowchart TB
+  subgraph Consumers["Consumers (via port only)"]
+    BOOT["Platform bootstrap / Kernel Services"]
+    EXT["Extensions (SDK · ADR-018)"]
+  end
+
+  subgraph LK["Lifecycle Management Kernel Service — ADR-040"]
+    SERVICE["lifecycleService\nregister/initialize/start/stop\nrestart/status/verify/health"]
+    HOOKS["hook registry (init/start/stop)"]
+    METRICS["metrics (Prometheus)"]
+    ADAPTER["sdkAdapter\nnamespace-scoped lifecycle() port\nlifecycle:read · lifecycle:manage"]
+  end
+
+  subgraph Domain["Domain (pure)"]
+    CMP["component (state + checksum)"]
+    STM["states (transition machine)"]
+    GRAPH["graph (topo sort · cycle detect)"]
+    ERR["errors"]
+    EVT["events (catalog)"]
+  end
+
+  subgraph Providers["Provider adapters (metadata only)"]
+    MEM["memory"]
+    FUT["extension points:\npostgresql · storage · redis · mongodb · cloud-registry · custom"]
+  end
+
+  BACKBONE["Event Backbone (ADR-016)\nEventPublisher port"]
+  SCHED["Scheduler (ADR-020)\ntriggers orchestration"]
+  LOCK["Lock Platform (ADR-022)\nguards distributed startup"]
+  OBS["Observability (ADR-033)\nconsumes health/latency"]
+  AUDIT["Audit (ADR-026)\nrecords lifecycle events"]
+
+  BOOT --> SERVICE
+  EXT -->|this.lifecycle| ADAPTER --> SERVICE
+  SERVICE --> GRAPH
+  SERVICE --> STM
+  SERVICE --> CMP
+  SERVICE --> HOOKS
+  SERVICE --> Providers
+  SCHED -.->|trigger| SERVICE
+  LOCK -.->|guard| SERVICE
+  SERVICE -->|Registered/Initialized/Started/Stopped/Restarted/StateChanged/Verified| BACKBONE
+  BACKBONE -.-> AUDIT
+  BACKBONE -.-> OBS
+  SERVICE --> METRICS
+
+  classDef kernel fill:#eef,stroke:#66a;
+  class SERVICE,HOOKS,METRICS,ADAPTER kernel;
