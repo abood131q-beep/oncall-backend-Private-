@@ -48,7 +48,7 @@ function metricNames(body) {
   return body.split('\n').filter((l) => l.startsWith('# TYPE ') || l.startsWith('# HELP ')).sort().join('\n');
 }
 function healthShape(body) {
-  try { const o = JSON.parse(body); if ('uptime' in o) o.uptime = '<n>'; return JSON.stringify(o); } catch { return body; }
+  try { const o = JSON.parse(body); if ('uptime' in o) o.uptime = '<n>'; if ('timestamp' in o) o.timestamp = '<ts>'; return JSON.stringify(o); } catch { return body; }
 }
 function normalize(probe, r) {
   if (probe.path === '/metrics') return { status: r.status, headers: r.headers, body: metricNames(r.body) };

@@ -67,6 +67,7 @@ function healthShape(body) {
   try {
     const o = JSON.parse(body);
     if ('uptime' in o) o.uptime = '<n>';
+    if ('timestamp' in o) o.timestamp = '<ts>';
     return JSON.stringify(o);
   } catch {
     return body;

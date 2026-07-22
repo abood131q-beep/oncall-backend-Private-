@@ -16,6 +16,11 @@ const DIR = join(ROOT, 'tests', 'integration');
 
 const harnesses = readdirSync(DIR)
   .filter((f) => f.endsWith('-ab.mjs'))
+  // engine-ab.mjs is the SQLite≡PostgreSQL cross-engine gate; it REQUIRES a live Postgres and is
+  // executed by the dedicated `postgres` CI job (scripts/verify-postgres.sh, with a real PG service).
+  // It cannot run in this sqlite-only sweep (no PG here), so exclude it — coverage is preserved by
+  // the postgres job, nothing is skipped or weakened.
+  .filter((f) => f !== 'engine-ab.mjs')
   .sort();
 
 let failed = 0;

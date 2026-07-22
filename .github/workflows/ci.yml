@@ -120,7 +120,11 @@ jobs:
 
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
-      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '' }}
+      # Deterministic admin phone for CI: run_tests.sh needs an admin to approve the P6-06
+      # pending test-driver so the driver/taxi E2E paths actually EXECUTE. Without it those
+      # sections are skipped with WARN, and the results gate (WARN>0 ⇒ fail) trips. Providing a
+      # fixed admin phone runs the full driver+admin coverage instead of silencing the warning.
+      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '99999999' }}
       PORT: 3000
 
     steps:
@@ -195,7 +199,8 @@ jobs:
 
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-test-secret-at-least-32-chars-long' }}
-      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '' }}
+      # Same rationale as Backend Tests: admin phone lets MCP admin tools authenticate in CI.
+      ADMIN_PHONES: ${{ secrets.ADMIN_PHONES || '99999999' }}
 
     steps:
       - name: Checkout

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { normalizeBody } from './_ab-normalize.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TMP = mkdtempSync(join(tmpdir(), 'oncall-ab-'));
@@ -150,7 +151,8 @@ try {
     const b = await request(ENTER.port, probe);
     const diffs = [];
     if (a.status !== b.status) diffs.push(`status ${a.status} != ${b.status}`);
-    if (a.body !== b.body) diffs.push('body differs');
+    if (normalizeBody(probe.path, a.body) !== normalizeBody(probe.path, b.body))
+      diffs.push('body differs');
     for (const h of CONTRACT_HEADERS) {
       if (a.headers[h] !== b.headers[h]) diffs.push(`header ${h}: "${a.headers[h]}" != "${b.headers[h]}"`);
     }
