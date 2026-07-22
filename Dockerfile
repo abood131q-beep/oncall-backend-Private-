@@ -31,7 +31,13 @@ WORKDIR /build
 # Layer-cache optimization: manifests first — deps re-install only when they change
 COPY package.json package-lock.json ./
 
+# Compile sqlite3 from source instead of using its node-pre-gyp PREBUILT binary: the published
+# prebuilt links against GLIBC_2.38, newer than node:24-slim (Debian bookworm) provides (2.36), so
+# the runtime crashed with "GLIBC_2.38 not found (required by node_sqlite3.node)". Building here
+# against THIS image's glibc guarantees the .node binary loads in the identical runtime base. The
+# toolchain (python3/make/g++) exists only in this builder stage.
 RUN npm ci --omit=dev \
+    && npm rebuild sqlite3 --build-from-source \
     && npm cache clean --force
 
 # ─── Stage 2: runtime — minimal production image ──────────────────────────────

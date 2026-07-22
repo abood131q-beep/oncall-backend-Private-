@@ -161,21 +161,25 @@ jobs:
 
       - name: Check test results
         run: |
-          FAIL=$(grep -c "❌ FAIL" test_output.txt || true)
-          WARN=$(grep -c "⚠️  WARN" test_output.txt || true)
-          PASS=$(grep -c "✅ PASS" test_output.txt || true)
+          # Count only REAL result lines, NOT run_tests.sh's own summary tally lines
+          # ("❌ FAIL : N", "⚠️  WARN : N", "✅ PASS : N") — those also contain the marker and were
+          # being miscounted (a clean 0-failure run still matched "❌ FAIL : 0" ⇒ false failure).
+          # Parser-correctness fix only: real failures/warnings are still fully gated.
+          FAIL=$(grep "❌ FAIL" test_output.txt | grep -vcE "FAIL : [0-9]" || true)
+          WARN=$(grep "⚠️  WARN" test_output.txt | grep -vcE "WARN : [0-9]" || true)
+          PASS=$(grep "✅ PASS" test_output.txt | grep -vcE "PASS : [0-9]" || true)
           echo ""
           echo "═══════════════════════════════════"
           echo "  PASS: $PASS  |  FAIL: $FAIL  |  WARN: $WARN"
           echo "═══════════════════════════════════"
           if [ "$FAIL" -gt "0" ]; then
             echo "❌ Tests FAILED — $FAIL failure(s)"
-            grep "❌ FAIL" test_output.txt
+            grep "❌ FAIL" test_output.txt | grep -vE "FAIL : [0-9]"
             exit 1
           fi
           if [ "$WARN" -gt "0" ]; then
             echo "⚠️  Warnings present — $WARN warning(s)"
-            grep "⚠️" test_output.txt
+            grep "⚠️  WARN" test_output.txt | grep -vE "WARN : [0-9]"
             exit 1
           fi
           echo "✅ All tests passed!"

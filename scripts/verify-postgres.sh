@@ -54,7 +54,11 @@ echo "▶ 4/6  Architecture verifier…"
 node architecture/compliance/verify-architecture.mjs | tail -2
 
 echo "▶ 5/6  Unit tests…"
-node --test tests/unit/*.test.js 2>&1 | grep -E "^# (tests|pass|fail)"
+# Gate on node --test's EXIT CODE (reporter-agnostic). The previous `| grep "^# tests"` broke under
+# `set -o pipefail` on Node 24, whose default reporter no longer emits TAP `# tests` lines, so grep
+# matched nothing and failed the script even though every test passed. Running directly still fails
+# the job on any real test failure (non-zero exit) — nothing is weakened.
+node --test tests/unit/*.test.js
 
 echo "▶ 6/6  Cross-engine A/B — SQLite baseline vs PostgreSQL…"
 PG_URL="$PG_URL" node tests/integration/engine-ab.mjs
