@@ -452,7 +452,10 @@ function createOnCallApplication() {
       }
       io.close(() => {
         server.close((err) => {
-          if (err) return reject(err);
+          // io.close() already closed the underlying HTTP server, so a second close() reports
+          // ERR_SERVER_NOT_RUNNING — the expected already-closed state, not a failure. Only a
+          // different error is a genuine shutdown fault worth rejecting on.
+          if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') return reject(err);
           listening = false;
           resolve({ stopped: true });
         });

@@ -1,7 +1,7 @@
 {
   "criterion": "ADR-047 Gate B2.3 — staged rollback, no client re-auth",
   "phase": "20.b",
-  "generatedAt": "2026-07-21T18:10:47.243Z",
+  "generatedAt": "2026-07-22T16:45:40.786Z",
   "identityAuthoritativeWired": false,
   "note": "IDENTITY_AUTHORITATIVE NOT-YET-WIRED (introduced in Phase 20.c); drill currently proves rollback-safety across the shadow-flag flip.",
   "rollbackSafety": "PASS — sessions minted before the flip remain valid after"

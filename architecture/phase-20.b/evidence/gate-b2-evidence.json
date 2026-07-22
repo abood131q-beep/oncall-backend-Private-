@@ -1,7 +1,7 @@
 {
   "gate": "ADR-047 Gate B2 — Proven Identity token parity",
   "phase": "20.b",
-  "generatedAt": "2026-07-21T18:10:47.287Z",
+  "generatedAt": "2026-07-22T16:45:40.833Z",
   "measured": {
     "pureParity": true,
     "socketParity": true,

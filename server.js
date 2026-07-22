@@ -76,7 +76,10 @@ if (ENTERPRISE_MODE) {
     // إغلاق Socket.IO أولاً لمنع upgrade requests جديدة (L3 fix)
     io.close(() => {
       server.close((err) => {
-        if (err) {
+        // io.close() already closes the underlying HTTP server it was attached to, so this
+        // second close() reports ERR_SERVER_NOT_RUNNING ("Server is not running.") — that is the
+        // expected already-closed state, NOT a shutdown failure. Only a different error is real.
+        if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
           logger.error('Error during shutdown:', { message: err.message });
           process.exit(1);
         }

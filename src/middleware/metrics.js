@@ -45,7 +45,9 @@ setInterval(() => {
       : 0;
   _cpuLast = process.cpuUsage();
   _cpuTimeLast = now;
-}, 5000);
+  // unref(): housekeeping-only timer — must NOT keep the event loop (or a test
+  // process that merely requires this module) alive. Same policy as rateLimiter/socket.
+}, 5000).unref();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 

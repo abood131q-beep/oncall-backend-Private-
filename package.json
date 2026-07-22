@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "bash run_tests.sh",
-    "test:unit": "node --test tests/unit/*.test.js",
+    "test:unit": "node --test --test-timeout=60000 tests/unit/*.test.js",
     "test:ab": "node scripts/run-ab.mjs",
     "test:coverage": "node --experimental-test-coverage --test tests/unit/*.test.js",
     "verify:shadow": "node scripts/verify-shadow.mjs",

@@ -66,6 +66,8 @@ setInterval(() => {
   for (const [key, item] of cache.entries()) {
     if (now > item.expiry) cache.delete(key);
   }
-}, 30000);
+  // unref(): housekeeping-only sweep — must NOT keep the event loop (or a test
+  // process that merely requires this module) alive. Same policy as rateLimiter/socket.
+}, 30000).unref();
 
 module.exports = { cache, CACHE_TTL, getCache, setCache, clearCache };
