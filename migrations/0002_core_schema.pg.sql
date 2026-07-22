@@ -104,7 +104,10 @@ CREATE TABLE IF NOT EXISTS trips (
   driver_rating INTEGER,
   driver_rating_comment TEXT,
   passenger_rating INTEGER,
-  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  -- Parity with the SQLite trips schema (which has updated_at): without this the PG trip JSON
+  -- omitted updated_at, breaking the SQLite≡PostgreSQL cross-engine A/B (trip:create, trips:paged).
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS wallets (
