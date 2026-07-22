@@ -99,8 +99,13 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Image boots and is reachable on the published port
         run: |
+          # The image runs NODE_ENV=production (Dockerfile), so the P6-04 production safety guards
+          # are ACTIVE: SMS_PROVIDER must not be `console`, SMS_API_KEY must be set, REQUIRE_OTP=true.
+          # We SATISFY those guards with a production-shaped config (no guard is disabled or weakened);
+          # this smoke only probes /health and never sends SMS, so a placeholder key is safe.
           docker run -d --name ci-smoke \
             -e JWT_SECRET=ci-test-secret-at-least-32-chars -e PORT=3000 \
+            -e SMS_PROVIDER=twilio -e SMS_API_KEY=ci-smoke-placeholder-not-a-real-key -e REQUIRE_OTP=true \
             -p 3000:3000 oncall-backend:ci-check
           # Poll the REAL readiness signal — the published port from the host — with retries,
           # tolerating slow startup. Break early if the container exits (crash). This still FAILS

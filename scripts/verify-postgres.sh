@@ -23,11 +23,26 @@ docker rm -f "$PGC" >/dev/null 2>&1 || true
 docker run -d --name "$PGC" \
   -e POSTGRES_USER=oncall -e POSTGRES_PASSWORD=oncall -e POSTGRES_DB=oncall_test \
   -p 5433:5432 postgres:16-alpine >/dev/null
-echo "   waiting for readiness…"
-for i in $(seq 1 60); do
-  if docker exec "$PGC" pg_isready -U oncall -d oncall_test >/dev/null 2>&1; then break; fi
+echo "   waiting for readiness (real server on the published TCP port)…"
+# ROOT CAUSE of the earlier "Connection terminated unexpectedly" during migrations:
+# postgres:*-alpine first boots a TEMPORARY bootstrap server (unix socket only, no TCP) to run
+# initdb, then RESTARTS as the real server. `docker exec pg_isready` can report ready against that
+# bootstrap server, so migrations connected in the window where the server restarts and dropped the
+# connection. A HOST→TCP `SELECT 1` on the published port only succeeds against the REAL server (the
+# bootstrap server never listens on the mapped port), so it cannot race the restart.
+ready=0
+for i in $(seq 1 90); do
+  if PG_URL="$PG_URL" node -e "const{Client}=require('pg');const c=new Client({connectionString:process.env.PG_URL,connectionTimeoutMillis:2000});c.connect().then(()=>c.query('SELECT 1')).then(()=>c.end()).then(()=>process.exit(0)).catch(()=>process.exit(1));" 2>/dev/null; then
+    ready=1; break
+  fi
   sleep 1
 done
+if [ "$ready" != 1 ]; then
+  echo "❌ PostgreSQL never accepted a TCP connection on $PG_URL after ~90s"
+  docker logs "$PGC" 2>&1 | tail -20
+  docker rm -f "$PGC" >/dev/null 2>&1 || true
+  exit 1
+fi
 
 cleanup() { echo "▶ teardown: removing $PGC"; docker rm -f "$PGC" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
