@@ -427,19 +427,33 @@ function createOnCallApplication() {
       try {
         const taxis = (await dbGet('SELECT COUNT(*) AS c FROM taxis')) || { c: 0 };
         if (Number(taxis.c) === 0) {
-          await dbRun("INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 001', 29.3765, 47.9785, 'online')");
-          await dbRun("INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 002', 29.3790, 47.9820, 'online')");
-          await dbRun("INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 003', 29.3820, 47.9750, 'online')");
+          await dbRun(
+            "INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 001', 29.3765, 47.9785, 'online')"
+          );
+          await dbRun(
+            "INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 002', 29.3790, 47.9820, 'online')"
+          );
+          await dbRun(
+            "INSERT INTO taxis (name, lat, lng, status) VALUES ('Taxi 003', 29.3820, 47.9750, 'online')"
+          );
         }
         const scooters = (await dbGet('SELECT COUNT(*) AS c FROM scooters')) || { c: 0 };
         if (Number(scooters.c) === 0) {
-          await dbRun("INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 001', 'SC001', 29.3759, 47.9774, 85, 'available')");
-          await dbRun("INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 002', 'SC002', 29.3780, 47.9800, 60, 'available')");
-          await dbRun("INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 003', 'SC003', 29.3800, 47.9750, 90, 'available')");
+          await dbRun(
+            "INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 001', 'SC001', 29.3759, 47.9774, 85, 'available')"
+          );
+          await dbRun(
+            "INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 002', 'SC002', 29.3780, 47.9800, 60, 'available')"
+          );
+          await dbRun(
+            "INSERT INTO scooters (name, scooter_code, lat, lng, battery, status) VALUES ('Scooter 003', 'SC003', 29.3800, 47.9750, 90, 'available')"
+          );
         }
         const users = (await dbGet('SELECT COUNT(*) AS c FROM users')) || { c: 0 };
         if (Number(users.c) === 0) {
-          await dbRun("INSERT INTO users (phone, name, balance) VALUES ('99999999', 'مستخدم تجريبي', 10)");
+          await dbRun(
+            "INSERT INTO users (phone, name, balance) VALUES ('99999999', 'مستخدم تجريبي', 10)"
+          );
         }
       } catch (e) {
         logger.error('Postgres dev seed error:', { message: e.message });
